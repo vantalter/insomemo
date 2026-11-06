@@ -28,7 +28,7 @@ impl Store {
             .open(dir.join("daemon.lock"))
             .map_err(|e| e.to_string())?;
         if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-            return Err("Another input-switcher instance owns this state directory".into());
+            return Err("Another insomemo instance owns this state directory".into());
         }
         Ok(Self {
             path: dir.join("state.json"),
@@ -93,7 +93,7 @@ mod tests {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     fn directory() -> PathBuf {
         std::env::temp_dir().join(format!(
-            "input-switcher-test-{}-{}",
+            "insomemo-test-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ))

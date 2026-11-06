@@ -1,4 +1,5 @@
 #include "bridge.h"
+#include "tray_icon.h"
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
@@ -87,10 +88,21 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     dispatch_resume(self.interruptSignal);
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
-    self.status = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
-    self.status.button.title = @"--";
-    self.status.button.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightMedium];
-    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Input Switcher"];
+    self.status = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
+    self.status.button.title = @"";
+    self.status.button.accessibilityLabel = @"Insomemo";
+    NSImage *trayImage = [[NSImage alloc] initWithData:[NSData dataWithBytes:tray_icon
+                                                                      length:sizeof(tray_icon)]];
+    // Keep the artwork at the selected 22-point menu-bar size without allowing
+    // the button to shrink the template further.
+    trayImage.size = NSMakeSize(22, 22);
+    // A template uses its alpha mask: AppKit supplies white/dark ink for the
+    // actual menu-bar appearance, including selected and high-contrast states.
+    trayImage.template = YES;
+    self.status.button.image = trayImage;
+    self.status.button.imagePosition = NSImageOnly;
+    self.status.button.imageScaling = NSImageScaleNone;
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Insomemo"];
     menu.autoenablesItems = NO;
     menu.delegate = self;
     self.contextItem = [menu addItemWithTitle:@"Active Context: —" action:nil keyEquivalent:@""];
@@ -307,13 +319,12 @@ char *native_layouts(void) {
 }
 void native_free(char *value) { free(value); }
 
-void native_update(const char *code, const char *context, int paused, const char *error,
-                   const char *layouts_json) {
+void native_update(const char *context, int paused, const char *error, const char *layouts_json) {
     if (!delegate.status)
         return;
-    delegate.status.button.title =
-        [NSString stringWithFormat:@"%@%@", @(code), paused ? @" ⏸" : @""];
-    delegate.status.button.toolTip = @(context);
+    delegate.status.button.appearsDisabled = paused;
+    delegate.status.button.toolTip =
+        [NSString stringWithFormat:@"Insomemo%@ — %@", paused ? @" (Paused)" : @"", @(context)];
     delegate.contextItem.title = [@"Active Context: " stringByAppendingString:@(context)];
     delegate.pauseItem.title = paused ? @"Resume Auto-Switching" : @"Pause Auto-Switching";
     delegate.errorItem.title = @(error);

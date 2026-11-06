@@ -8,7 +8,7 @@ import tempfile
 import time
 
 root = pathlib.Path(__file__).resolve().parent.parent
-binary = str(root / "target/release/input-switcher")
+binary = str(root / "target/release/insomemo")
 environment = dict(os.environ)
 for key in ("WAYLAND_DISPLAY", "SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE"):
     environment.pop(key, None)
@@ -20,7 +20,7 @@ def call(destination, path, method, *arguments):
         "--object-path", path, "--method", method, "--", *arguments,
     ], text=True, env=environment, stderr=subprocess.DEVNULL)
 
-with tempfile.TemporaryDirectory(prefix="input-switcher-linux-") as directory:
+with tempfile.TemporaryDirectory(prefix="insomemo-linux-") as directory:
     layouts = json.loads(subprocess.check_output([binary, "--list-layouts"], env=environment))
     assert layouts, "XKB must expose at least one layout"
     daemon = subprocess.Popen([binary, "--state-dir", directory], env=environment)
@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix="input-switcher-linux-") as directory:
                 name = name.strip("'")
                 try:
                     result = call(name, "/StatusNotifierItem", "org.freedesktop.DBus.Properties.Get", "org.kde.StatusNotifierItem", "Id")
-                    if "input-switcher" in result:
+                    if "insomemo" in result:
                         owner = name
                         break
                 except subprocess.CalledProcessError:

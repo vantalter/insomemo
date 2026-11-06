@@ -42,7 +42,7 @@ fn select_layout(layout: &str) -> bool {
     #[cfg(target_os = "linux")]
     if let Some(result) = WAYLAND.with(|w| w.borrow_mut().as_mut().map(|b| b.select(layout))) {
         if let Err(e) = &result {
-            eprintln!("input-switcher: {e}");
+            eprintln!("insomemo: {e}");
         }
         return result.is_ok();
     }
@@ -56,12 +56,6 @@ fn update_tray() {
             return;
         };
         let engine = &app.engine;
-        let code = app
-            .layouts
-            .iter()
-            .find(|l| l.id == engine.current_layout)
-            .map(|l| l.code.as_str())
-            .unwrap_or("--");
         let context = engine
             .active
             .as_ref()
@@ -77,7 +71,6 @@ fn update_tray() {
         let layouts = serde_json::to_string(&app.layouts).unwrap();
         unsafe {
             native::native_update(
-                cstring(code).as_ptr(),
                 cstring(&context).as_ptr(),
                 engine.paused as i32,
                 cstring(&app.error).as_ptr(),
@@ -103,7 +96,7 @@ fn flush() {
                     app.save_failed = false;
                 }
                 Err(e) => {
-                    eprintln!("input-switcher: {e}");
+                    eprintln!("insomemo: {e}");
                     app.error = e;
                     app.save_failed = true;
                 }
@@ -210,7 +203,7 @@ fn event(kind: &str, first: &str, second: &str) {
                 None
             }
             "error" => {
-                eprintln!("input-switcher: {first}");
+                eprintln!("insomemo: {first}");
                 app.error = first.into();
                 None
             }
@@ -256,11 +249,17 @@ pub unsafe extern "C" fn switcher_event(
 }
 
 fn run() -> Result<(), String> {
-    let mut dir = std::env::var_os("XDG_CONFIG_HOME")
+    let config_root = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .ok_or("HOME or XDG_CONFIG_HOME must be set")?
-        .join("input-switcher");
+        .ok_or("HOME or XDG_CONFIG_HOME must be set")?;
+    let mut dir = config_root.join("insomemo");
+    // Keep existing users' learned layouts and the same instance lock. New
+    // installations use the new name; explicit --state-dir still takes priority.
+    let legacy_dir = config_root.join("input-switcher");
+    if !dir.exists() && legacy_dir.is_dir() {
+        dir = legacy_dir;
+    }
     let mut config_path = None;
     let mut check = false;
     let mut list = false;
@@ -269,12 +268,12 @@ fn run() -> Result<(), String> {
         match arg.as_str() {
             "--help" | "-h" => {
                 println!(
-                    "input-switcher — context-aware keyboard layout memory\n\nUsage: input-switcher [--config PATH] [--state-dir DIR]\n       input-switcher --check | --list-layouts | --print-default-config\n\n--check                 Validate configuration and state without starting the daemon\n--list-layouts          Print installed layout IDs as JSON\n--print-default-config  Print the optional config.json template\n--state-dir DIR         Override the private configuration/state directory\n--config PATH           Read configuration from a different JSON file\n--version              Print version\n\nmacOS: grant Accessibility access for window/tab tracking.\nLinux: X11, Sway, and Hyprland; requires a StatusNotifier tray host."
+                    "insomemo — context-aware keyboard layout memory\n\nUsage: insomemo [--config PATH] [--state-dir DIR]\n       insomemo --check | --list-layouts | --print-default-config\n\n--check                 Validate configuration and state without starting the daemon\n--list-layouts          Print installed layout IDs as JSON\n--print-default-config  Print the optional config.json template\n--state-dir DIR         Override the private configuration/state directory\n--config PATH           Read configuration from a different JSON file\n--version              Print version\n\nmacOS: grant Accessibility access for window/tab tracking.\nLinux: X11, Sway, and Hyprland; requires a StatusNotifier tray host."
                 );
                 return Ok(());
             }
             "--version" | "-V" => {
-                println!("input-switcher {}", env!("CARGO_PKG_VERSION"));
+                println!("insomemo {}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
             "--print-default-config" => {
@@ -353,7 +352,7 @@ fn run() -> Result<(), String> {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("input-switcher: {error}");
+        eprintln!("insomemo: {error}");
         std::process::exit(1);
     }
 }

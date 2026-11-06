@@ -20,7 +20,7 @@ static Window active_window;
 static int xkb_event;
 static guint save_timer;
 static guint revision = 1;
-static char *tray_code, *tray_context, *tray_error;
+static char *tray_context, *tray_error;
 static int tray_paused;
 static JsonArray *tray_layouts;
 static char *last_layouts;
@@ -76,7 +76,7 @@ char *native_xkb_names(const char *layouts, const char *variants) {
 static int x_error(Display *d, XErrorEvent *e) {
     (void)d;
     if (e->error_code != BadWindow && e->error_code != BadMatch)
-        fprintf(stderr, "input-switcher: X11 error %d\n", e->error_code);
+        fprintf(stderr, "insomemo: X11 error %d\n", e->error_code);
     return 0;
 }
 static int ensure_display(void) {
@@ -546,11 +546,11 @@ static GVariant *get_property(GDBusConnection *connection, const gchar *sender, 
     if (!strcmp(name, "Category"))
         return g_variant_new_string("SystemServices");
     if (!strcmp(name, "Id"))
-        return g_variant_new_string("input-switcher");
-    if (!strcmp(name, "Title") || !strcmp(name, "XAyatanaLabel"))
-        return g_variant_new_string(tray_code ? tray_code : "--");
-    if (!strcmp(name, "XAyatanaLabelGuide"))
-        return g_variant_new_string("XX");
+        return g_variant_new_string("insomemo");
+    if (!strcmp(name, "Title"))
+        return g_variant_new_string(tray_paused ? "Insomemo (Paused)" : "Insomemo");
+    if (!strcmp(name, "XAyatanaLabel") || !strcmp(name, "XAyatanaLabelGuide"))
+        return g_variant_new_string("");
     if (!strcmp(name, "Status"))
         return g_variant_new_string("Active");
     if (!strcmp(name, "WindowId"))
@@ -562,7 +562,7 @@ static GVariant *get_property(GDBusConnection *connection, const gchar *sender, 
         return empty_pixmap();
     if (!strcmp(name, "ToolTip"))
         return g_variant_new("(s@a(iiay)ss)", "input-keyboard-symbolic", empty_pixmap(),
-                             tray_code ? tray_code : "Input Switcher",
+                             tray_paused ? "Insomemo (Paused)" : "Insomemo",
                              tray_context ? tray_context : "");
     if (!strcmp(name, "Menu"))
         return g_variant_new_object_path("/MenuBar");
@@ -598,20 +598,15 @@ static void watcher_vanished(GDBusConnection *connection, const gchar *name, gpo
     (void)connection;
     (void)name;
     (void)data;
-    fprintf(
-        stderr,
-        "input-switcher: no StatusNotifier tray host; daemon remains active (SIGTERM to quit)\n");
+    fprintf(stderr,
+            "insomemo: no StatusNotifier tray host; daemon remains active (SIGTERM to quit)\n");
 }
 
-void native_update(const char *code, const char *context, int paused, const char *error,
-                   const char *layouts_json) {
-    gboolean changed = g_strcmp0(tray_code, code) || g_strcmp0(tray_context, context) ||
-                       g_strcmp0(tray_error, error) || tray_paused != paused ||
-                       g_strcmp0(last_layouts, layouts_json);
+void native_update(const char *context, int paused, const char *error, const char *layouts_json) {
+    gboolean changed = g_strcmp0(tray_context, context) || g_strcmp0(tray_error, error) ||
+                       tray_paused != paused || g_strcmp0(last_layouts, layouts_json);
     if (!changed)
         return;
-    g_free(tray_code);
-    tray_code = g_strdup(code);
     g_free(tray_context);
     tray_context = g_strdup(context);
     g_free(tray_error);
@@ -636,7 +631,7 @@ void native_update(const char *code, const char *context, int paused, const char
                                           "org.kde.StatusNotifierItem", signals[i], NULL, NULL);
         g_dbus_connection_emit_signal(bus, NULL, "/StatusNotifierItem",
                                       "org.kde.StatusNotifierItem", "XAyatanaNewLabel",
-                                      g_variant_new("(ss)", code, "XX"), NULL);
+                                      g_variant_new("(ss)", "", ""), NULL);
         g_dbus_connection_emit_signal(bus, NULL, "/MenuBar", "com.canonical.dbusmenu",
                                       "LayoutUpdated", g_variant_new("(ui)", revision, 0), NULL);
     }

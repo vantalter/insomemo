@@ -1,5 +1,5 @@
 [package]
-name = "input-switcher"
+name = "insomemo"
 version = "0.1.0"
 edition = "2024"
 description = "Event-driven, context-aware keyboard layout memory"

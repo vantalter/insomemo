@@ -27,5 +27,5 @@ jobs:
         run: dbus-run-session -- xvfb-run -a python3 scripts/smoke-linux.py
       - uses: actions/upload-artifact@v4
         with:
-          name: input-switcher-${{ matrix.os }}
-          path: target/release/input-switcher
+          name: insomemo-${{ matrix.os }}
+          path: target/release/insomemo

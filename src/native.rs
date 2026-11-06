@@ -14,7 +14,6 @@ unsafe extern "C" {
     fn native_layouts() -> *mut c_char;
     fn native_free(value: *mut c_char);
     pub fn native_update(
-        code: *const c_char,
         context: *const c_char,
         paused: c_int,
         error: *const c_char,

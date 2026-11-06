@@ -5,6 +5,17 @@ fn main() {
     build.include("native").warnings(true);
     match target.as_str() {
         "macos" => {
+            let icon_path = "assets/TrayTemplate.png";
+            println!("cargo:rerun-if-changed={icon_path}");
+            let icon = std::fs::read(icon_path).expect("Missing Insomemo tray icon");
+            let bytes = icon.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+            let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+            std::fs::write(
+                out.join("tray_icon.h"),
+                format!("static const unsigned char tray_icon[] = {{{bytes}}};\n"),
+            )
+            .expect("Cannot embed Insomemo tray icon");
+            build.include(out);
             build.flag("-mmacosx-version-min=12.0");
             build.file("native/macos.m").flag("-fobjc-arc");
             for framework in ["AppKit", "ApplicationServices", "Carbon"] {
@@ -22,7 +33,7 @@ fn main() {
             }
             build.file("native/linux.c").flag("-std=c11");
         }
-        _ => panic!("input-switcher supports macOS and Linux"),
+        _ => panic!("insomemo supports macOS and Linux"),
     }
-    build.compile("input_switcher_native");
+    build.compile("insomemo_native");
 }

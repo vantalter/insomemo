@@ -1,8 +1,8 @@
-# Input Switcher
+# Insomemo
 
 A small Rust daemon that remembers your keyboard layout for each application and, for selected apps, each window or tab title. Native menu-bar controls on macOS; a StatusNotifier tray on Linux. No webview, telemetry, ads, network service, or polling loop.
 
-For example: choose Ukrainian in a Slack conversation, English in a terminal tab, then return to either. Input Switcher restores the layout associated with that context. An app must expose tab/conversation changes through its window title for this to work.
+For example: choose Ukrainian in a Slack conversation, English in a terminal tab, then return to either. Insomemo restores the layout associated with that context. An app must expose tab/conversation changes through its window title for this to work.
 
 ## Build and run on macOS
 
@@ -10,12 +10,14 @@ Install Rust and Xcode Command Line Tools, then:
 
 ```sh
 make app
-open "dist/Input Switcher.app"
+open "dist/Insomemo.app"
 ```
 
-The app lives in the menu bar, without a Dock icon. Open its menu and select **Enable Window / Tab Tracking…**, then grant **Accessibility** access in System Settings → Privacy & Security → Accessibility. Until granted, application-level tracking works, but titles are unavailable. After granting access, switch to another app or reopen the tray menu. A rebuild may require granting permission again; keep the bundle at a stable path. This local app is ad-hoc signed, not notarized for distribution.
+The app lives in the menu bar, without a Dock icon. Its monochrome keyboard/sync symbol automatically renders white or dark to match the macOS menu bar. The tray is icon-only; the OS input menu shows the current language. Pausing dims the macOS icon while keeping its menu available. The purple app artwork is bundled as a multi-resolution macOS icon; artwork and preparation notes are in [assets](assets/README.md).
 
-The standalone executable is `target/release/input-switcher`. To run it in a terminal:
+Open its menu and select **Enable Window / Tab Tracking…**, then grant **Accessibility** access in System Settings → Privacy & Security → Accessibility. Until granted, application-level tracking works, but titles are unavailable. After granting access, switch to another app or reopen the tray menu. A rebuild may require granting permission again; keep the bundle at a stable path. This local app is ad-hoc signed, not notarized for distribution.
+
+The standalone executable is `target/release/insomemo`. To run it in a terminal:
 
 ```sh
 cargo run --release --locked
@@ -30,10 +32,10 @@ Development dependencies on Debian/Ubuntu:
 ```sh
 sudo apt install build-essential pkg-config libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev
 cargo build --release --locked
-./target/release/input-switcher
+./target/release/insomemo
 ```
 
-The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. Hosts supporting Ayatana labels show the layout shortcode beside the keyboard icon; others expose it in the tooltip/title. Without a tray host, switching continues and SIGTERM quits cleanly.
+The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. The tray shows an icon without an input-source label; its tooltip identifies Insomemo and the active context. Without a tray host, switching continues and SIGTERM quits cleanly.
 
 | Session | Integration | Availability |
 | --- | --- | --- |
@@ -52,10 +54,10 @@ X11 uses the core keyboard. On Wayland, the first Sway keyboard or the main Hypr
 No configuration file is required. Defaults include Ghostty, iTerm2, Terminal, Slack, Discord, Viber, common browsers, and several Linux terminals. Matching is exact and case-sensitive against bundle IDs, WM_CLASS, or app_id. The tray displays the identifier to help configure it.
 
 ```sh
-mkdir -p ~/.config/input-switcher
-./target/release/input-switcher --print-default-config > ~/.config/input-switcher/config.json
-./target/release/input-switcher --list-layouts
-./target/release/input-switcher --check
+mkdir -p ~/.config/insomemo
+./target/release/insomemo --print-default-config > ~/.config/insomemo/config.json
+./target/release/insomemo --list-layouts
+./target/release/insomemo --check
 ```
 
 See [config/example.json](config/example.json). Restart after editing configuration. Unknown fields and malformed JSON are errors.
@@ -67,7 +69,9 @@ See [config/example.json](config/example.json). Restart after editing configurat
 | `default_layout` | Optional fallback layout ID; `null` leaves unknown apps unchanged |
 | `keyboard` | Optional Wayland keyboard identifier/name; `null` chooses automatically |
 
-The default directory is `$XDG_CONFIG_HOME/input-switcher`, falling back to `~/.config/input-switcher`. `--state-dir DIR` overrides it; `--config PATH` overrides only the config file. `--check` validates config/state and checks the single-instance lock; it does not start the daemon or test graphical permissions. It creates the private directory and lock if absent.
+The default directory is `$XDG_CONFIG_HOME/insomemo`, falling back to `~/.config/insomemo`. `--state-dir DIR` overrides it; `--config PATH` overrides only the config file. `--check` validates config/state and checks the single-instance lock; it does not start the daemon or test graphical permissions. It creates the private directory and lock if absent.
+
+Upgrading from Input Switcher: when no `insomemo` directory exists, the app reuses an existing `input-switcher` directory so your settings, learned layouts, and single-instance lock are preserved. Quit the old app before opening Insomemo. Its new bundle identifier is `dev.insomemo.app`, so macOS may require a fresh Accessibility grant. The GitHub repository name and visibility are unchanged.
 
 ## How memory works
 
@@ -81,7 +85,7 @@ The default directory is `$XDG_CONFIG_HOME/input-switcher`, falling back to `~/.
 
 **Pause Auto-Switching** freezes both switching and learning. Resuming restores the focused context. **Force Default Layout** selects a layout immediately, sets the global fallback, and updates the current context and its app fallback. **Clear Cache** removes learned contexts and the tray-selected default; it retains a default explicitly specified in config. Clear/default actions use the same debounced persistence as manual layout changes.
 
-Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Input Switcher can only track what the application exposes as its window title; it does not inspect browser content or capture keystrokes.
+Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Insomemo can only track what the application exposes as its window title; it does not inspect browser content or capture keystrokes.
 
 ## Performance and validation
 
@@ -107,7 +111,7 @@ Manual desktop acceptance checks:
 
 ## Optional startup
 
-On macOS, add the built app through System Settings → General → Login Items. On Linux, copy the binary into `~/.local/bin` and use either the provided [desktop entry](packaging/input-switcher.desktop) or [systemd user service](packaging/input-switcher.service). Ensure the compositor environment is imported before starting the service. Nothing is installed or enabled automatically.
+On macOS, add the built app through System Settings → General → Login Items. On Linux, copy the binary into `~/.local/bin` and use either the provided [desktop entry](packaging/insomemo.desktop) or [systemd user service](packaging/insomemo.service). Ensure the compositor environment is imported before starting the service. Nothing is installed or enabled automatically.
 
 ## Native references
 

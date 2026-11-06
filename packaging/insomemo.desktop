@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Input Switcher
+Name=Insomemo
 Comment=Remember keyboard layouts for apps and window titles
-Exec=input-switcher
+Exec=insomemo
 Icon=input-keyboard
 Terminal=false
 Categories=Utility;Accessibility;
