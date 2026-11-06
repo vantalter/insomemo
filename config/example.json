@@ -1,0 +1,24 @@
+{
+  "title_tracking_apps": [
+    "com.mitchellh.ghostty",
+    "com.googlecode.iterm2",
+    "com.apple.Terminal",
+    "com.tinyspeck.slackmacgap",
+    "com.viber.osx",
+    "com.hnc.Discord",
+    "com.google.Chrome",
+    "org.mozilla.firefox",
+    "com.apple.Safari",
+    "ghostty",
+    "Alacritty",
+    "kitty",
+    "Slack",
+    "discord",
+    "Viber",
+    "firefox",
+    "Google-chrome"
+  ],
+  "title_suffixes": [],
+  "default_layout": null,
+  "keyboard": null
+}

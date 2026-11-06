@@ -1,0 +1,31 @@
+name: build-and-test
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Linux native dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev pkg-config xvfb x11-xkb-utils dbus-x11
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: macOS bundle
+        if: runner.os == 'macOS'
+        run: python3 scripts/bundle-macos.py
+      - name: Linux runtime smoke test
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- xvfb-run -a python3 scripts/smoke-linux.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: input-switcher-${{ matrix.os }}
+          path: target/release/input-switcher

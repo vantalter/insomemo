@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Input Switcher
+Comment=Remember keyboard layouts for apps and window titles
+Exec=input-switcher
+Icon=input-keyboard
+Terminal=false
+Categories=Utility;Accessibility;
