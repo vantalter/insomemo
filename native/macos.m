@@ -93,9 +93,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     self.status.button.accessibilityLabel = @"Insomemo";
     NSImage *trayImage = [[NSImage alloc] initWithData:[NSData dataWithBytes:tray_icon
                                                                       length:sizeof(tray_icon)]];
-    // Keep the artwork at the selected 22-point menu-bar size without allowing
+    // Keep the artwork at the selected 24-point menu-bar size without allowing
     // the button to shrink the template further.
-    trayImage.size = NSMakeSize(22, 22);
+    trayImage.size = NSMakeSize(24, 24);
     // A template uses its alpha mask: AppKit supplies white/dark ink for the
     // actual menu-bar appearance, including selected and high-contrast states.
     trayImage.template = YES;

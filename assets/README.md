@@ -4,7 +4,7 @@
 - `AppIcon.png`: the same artwork with the black exterior removed; packaged into the app's multi-resolution `AppIcon.icns` by `scripts/bundle-macos.py`.
 - `tray-template-source.png`: the original transparent monochrome extraction, with arrows above/below the keyboard, retained for comparison.
 - `tray-template-side-arrows-source.png`: the current version, with curved sync arrows on the left and right of the keyboard stack.
-- `TrayTemplate.png`: a 72-pixel packaging rendition of the current side-arrow mask, embedded in the executable and displayed on a 22-point canvas. macOS renders the template in white or dark according to the actual menu-bar appearance, including selection/high-contrast states. Separate colored tray art is not needed.
+- `TrayTemplate.png`: a 72-pixel packaging rendition of the current side-arrow mask, embedded in the executable and displayed on a 24-point canvas. macOS renders the template in white or dark according to the actual menu-bar appearance, including selection/high-contrast states. Separate colored tray art is not needed.
 
 Both transparent assets were prepared with the built-in imagegen tool. The original artwork remains available above. Packaging resizes use macOS `sips`; they do not redesign the artwork.
 
