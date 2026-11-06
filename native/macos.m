@@ -89,6 +89,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     self.status = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
+    self.status.autosaveName = @"dev.insomemo.app.status";
     self.status.button.title = @"";
     self.status.button.accessibilityLabel = @"Insomemo";
     NSImage *trayImage = [[NSImage alloc] initWithData:[NSData dataWithBytes:tray_icon

@@ -15,6 +15,8 @@ open "dist/Insomemo.app"
 
 The app lives in the menu bar, without a Dock icon. Its monochrome keyboard/sync symbol automatically renders white or dark to match the macOS menu bar. The tray is icon-only; the OS input menu shows the current language. Pausing dims the macOS icon while keeping its menu available. The purple app artwork is bundled as a multi-resolution macOS icon; artwork and preparation notes are in [assets](assets/README.md).
 
+To place Insomemo beside the macOS input-source icon, hold **Command** and drag the Insomemo icon there. The status item has a stable macOS autosave name so the system can retain its identity across launches. If the system input-source icon is hidden, Insomemo remains in its normal menu-bar position. macOS does not provide a supported API to position this app automatically relative to that system icon.
+
 Open its menu and select **Enable Window / Tab Tracking…**, then grant **Accessibility** access in System Settings → Privacy & Security → Accessibility. Until granted, application-level tracking works, but titles are unavailable. After granting access, switch to another app or reopen the tray menu. A rebuild may require granting permission again; keep the bundle at a stable path. This local app is ad-hoc signed, not notarized for distribution.
 
 The standalone executable is `target/release/insomemo`. To run it in a terminal:
