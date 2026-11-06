@@ -2,7 +2,7 @@
 
 A small Rust daemon that remembers your keyboard layout for each application and, for selected apps, each window or tab title. Native menu-bar controls on macOS; a StatusNotifier tray on Linux. No webview, telemetry, ads, network service, or polling loop.
 
-For example: choose Ukrainian in a Slack conversation, English in a terminal tab, then return to either. Insomemo restores the layout associated with that context. An app must expose tab/conversation changes through its window title for this to work.
+For example: choose Ukrainian in a Slack conversation, English in a terminal tab, then return to either. Insomemo restores the layout associated with that context. Most apps must expose tab/conversation changes through their window title; Ghostty's native macOS tabs are tracked separately by window identity.
 
 ## Build and run on macOS
 
@@ -77,17 +77,17 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 
 ## How memory works
 
-1. Each context is an app identifier, optionally followed by `:` and the first 16 hex characters of SHA-256 of its normalized title. Whitespace is collapsed; titles are otherwise preserved unless a configured suffix matches. Unread counts, terminal working directories, and renamed documents can produce new contexts.
+1. Each context is an app identifier, optionally followed by `:` and the first 16 hex characters of SHA-256 of its normalized title. Ghostty on macOS uses its accessibility window identity instead, so tabs with the same title remain separate and title changes stay in the same tab context. These Ghostty identities last for the Ghostty process; after Ghostty restarts, the app fallback applies until each tab learns a layout again. For title-based apps, whitespace is collapsed; titles are otherwise preserved unless a configured suffix matches. Unread counts, terminal working directories, and renamed documents can produce new contexts.
 2. On focus/title change, the daemon tries the exact context, its app fallback, then the optional global default. Without a match, it leaves the layout alone.
 3. A manual layout change teaches the active context. The first manual choice in a title-tracked app also establishes its app fallback. Later tab-specific changes preserve that fallback. Automatic restores are not learned as manual choices.
 4. App defaults and title contexts share a 200-entry LRU budget. Least recently used entries are evicted, including app fallbacks. Access order updates in memory and is persisted with the next state write.
 5. Changes save atomically after two seconds of inactivity. Quit, SIGINT, and SIGTERM flush pending changes. A corrupt/unknown-version state file is preserved and startup fails with an explanation. A file lock prevents two instances from modifying the same state directory.
 
-`state.json` contains layout IDs, app IDs, title hashes, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
+`state.json` contains layout IDs, app IDs, title or window-identity hashes, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
 
 **Pause Auto-Switching** freezes both switching and learning. Resuming restores the focused context. **Force Default Layout** selects a layout immediately, sets the global fallback, and updates the current context and its app fallback. **Clear Cache** removes learned contexts and the tray-selected default; it retains a default explicitly specified in config. Clear/default actions use the same debounced persistence as manual layout changes.
 
-Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Insomemo can only track what the application exposes as its window title; it does not inspect browser content or capture keystrokes.
+Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Most apps must expose tab changes through their window title; Ghostty's native macOS tabs are tracked by accessibility window identity. Insomemo does not inspect browser content or capture keystrokes.
 
 ## Performance and validation
 

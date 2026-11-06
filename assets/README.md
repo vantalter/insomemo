@@ -1,7 +1,7 @@
 # Insomemo artwork
 
-- `app-icon-original.png`: the purple artwork supplied by the user, unchanged.
-- `AppIcon.png`: the same artwork with the black exterior removed; packaged into the app's multi-resolution `AppIcon.icns` by `scripts/bundle-macos.py`.
+- `app-icon-original.png`: the new neon artwork supplied by the user, unchanged.
+- `AppIcon.png`: the new artwork with the black exterior removed; packaged into the app's multi-resolution `AppIcon.icns` by `scripts/bundle-macos.py`.
 - `tray-template-source.png`: the original transparent monochrome extraction, with arrows above/below the keyboard, retained for comparison.
 - `tray-template-side-arrows-source.png`: the current version, with curved sync arrows on the left and right of the keyboard stack.
 - `TrayTemplate.png`: a 72-pixel packaging rendition of the current side-arrow mask, embedded in the executable and displayed on a 24-point canvas. macOS renders the template in white or dark according to the actual menu-bar appearance, including selection/high-contrast states. Separate colored tray art is not needed.
@@ -12,7 +12,7 @@ The side-arrow revision was also prepared with the built-in imagegen tool; its e
 
 App extraction prompt:
 
-> Use case: background-extraction. Asset type: macOS application icon for Insomemo. Edit the attached artwork with exactly one change: remove the plain black background OUTSIDE the large purple rounded-square icon and make only that exterior transparent. Preserve the original purple rounded square, glossy finish, lighting, cyan and pink sync arrows, all three stacked keyboard cards, keyboard glyph, exact shapes, colors, positions, and interior dark shading. Do not redesign, simplify, flatten, add text, or change the artwork. Keep the entire rounded square centered with its existing small outer padding. Actual transparent alpha outside its perimeter, crisp clean antialiased edges.
+> Use case: background-extraction. Asset type: production macOS application icon for Insomemo. Edit the supplied new neon artwork. Remove only the solid black background outside the large purple rounded-square icon and replace that exterior with genuine transparency. Preserve the glossy finish, lighting, cyan left arrow, pink right arrow, all three stacked keyboard cards, keyboard glyph, exact shapes, colors, positions, and interior dark shading. Do not redesign, simplify, flatten, add text, or change the artwork. Keep the rounded square centered with its small exterior padding and a clean antialiased perimeter.
 
 Tray extraction prompt:
 

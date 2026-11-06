@@ -189,6 +189,8 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
             self.observer = observer;
             AXObserverAddNotification(observer, axApp, kAXFocusedWindowChangedNotification,
                                       (__bridge void *)self);
+            AXObserverAddNotification(observer, axApp, kAXMainWindowChangedNotification,
+                                      (__bridge void *)self);
             AXObserverAddNotification(observer, axApp, kAXFocusedUIElementChangedNotification,
                                       (__bridge void *)self);
             CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer),
@@ -203,11 +205,20 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
         self.activeApp.processIdentifier)
         return;
     NSString *title = @"";
+    NSString *windowID = @"";
+    NSString *identifier = self.activeApp.bundleIdentifier ?: self.activeApp.executableURL.path ?: self.activeApp.localizedName;
+    BOOL ghostty = [identifier isEqualToString:@"com.mitchellh.ghostty"];
     if (self.observedApp) {
         AXUIElementRef window = NULL;
-        if (AXUIElementCopyAttributeValue(self.observedApp, kAXFocusedWindowAttribute,
-                                          (CFTypeRef *)&window) == kAXErrorSuccess &&
-            window) {
+        // AppKit native tabs are separate AX windows. The selected tab can
+        // change the main window without changing the focused UI element.
+        AXError windowError = AXUIElementCopyAttributeValue(
+            self.observedApp, ghostty ? kAXMainWindowAttribute : kAXFocusedWindowAttribute,
+            (CFTypeRef *)&window);
+        if (ghostty && (windowError != kAXErrorSuccess || !window))
+            windowError = AXUIElementCopyAttributeValue(
+                self.observedApp, kAXFocusedWindowAttribute, (CFTypeRef *)&window);
+        if (windowError == kAXErrorSuccess && window) {
             if (!self.observedWindow || !CFEqual(window, self.observedWindow)) {
                 if (self.observedWindow) {
                     if (self.observer)
@@ -230,10 +241,12 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                     title = [(__bridge NSString *)value copy];
                 CFRelease(value);
             }
+            if (ghostty)
+                windowID = [NSString stringWithFormat:@"%d:%lu", self.activeApp.processIdentifier,
+                                                       (unsigned long)CFHash(self.observedWindow)];
         }
     }
-    NSString *identifier = self.activeApp.bundleIdentifier ?: self.activeApp.executableURL.path ?: self.activeApp.localizedName;
-    emit(@"context", identifier, title);
+    switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String);
 }
 - (void)layoutChanged:(NSNotification *)notification {
     TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();

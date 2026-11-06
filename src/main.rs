@@ -106,6 +106,10 @@ fn flush() {
 }
 
 fn event(kind: &str, first: &str, second: &str) {
+    event_with_context(kind, first, second, "");
+}
+
+fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str) {
     if kind == "fatal" {
         APP.with(|slot| {
             if let Some(app) = slot.borrow_mut().as_mut() {
@@ -182,7 +186,7 @@ fn event(kind: &str, first: &str, second: &str) {
         let engine = &mut app.engine;
         let mut save = false;
         let desired = match kind {
-            "context" => engine.focus(first, second),
+            "context" => engine.focus_window(first, second, window_id),
             "layout" => {
                 save = engine.layout_changed(first);
                 None
@@ -246,6 +250,19 @@ pub unsafe extern "C" fn switcher_event(
     // Native code guarantees non-null, UTF-8 strings valid for the callback.
     let string = |p| unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() };
     event(&string(kind), &string(first), &string(second));
+}
+
+/// # Safety
+/// Strings are non-null, NUL-terminated, and valid for this callback on the main thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn switcher_context(
+    app: *const c_char,
+    title: *const c_char,
+    window_id: *const c_char,
+) {
+    let string = |p| unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() };
+    let (app, title, window_id) = (string(app), string(title), string(window_id));
+    event_with_context("context", &app, &title, &window_id);
 }
 
 fn run() -> Result<(), String> {

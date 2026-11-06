@@ -75,6 +75,10 @@ impl Engine {
     }
 
     pub fn focus(&mut self, app: &str, title: &str) -> Option<String> {
+        self.focus_window(app, title, "")
+    }
+
+    pub fn focus_window(&mut self, app: &str, title: &str, window_id: &str) -> Option<String> {
         if app.is_empty() {
             self.active = None;
             self.pending = None;
@@ -82,7 +86,12 @@ impl Engine {
         }
         let title = self.config.clean_title(title);
         let track = self.config.title_tracking_apps.iter().any(|a| a == app);
-        let key = if track && !title.is_empty() {
+        let key = if track && !window_id.is_empty() {
+            format!(
+                "{app}:{}",
+                crate::native::title_hash(&format!("window:{window_id}"))
+            )
+        } else if track && !title.is_empty() {
             format!("{app}:{}", crate::native::title_hash(&title))
         } else {
             app.to_owned()
@@ -246,6 +255,27 @@ mod tests {
         e.selected("en", true);
         assert!(!e.layout_changed("en"));
         assert_eq!(e.state.entries.len(), 3);
+    }
+
+    #[test]
+    fn native_tabs_with_identical_titles_keep_separate_layouts() {
+        let mut e = engine();
+        e.focus_window("terminal", "same title", "window-a");
+        e.layout_changed("ua");
+        e.focus_window("terminal", "same title", "window-b");
+        e.layout_changed("en");
+        assert_eq!(
+            e.focus_window("terminal", "same title", "window-a"),
+            Some("ua".into())
+        );
+        e.selected("ua", true);
+        assert_eq!(
+            e.focus_window("terminal", "same title", "window-b"),
+            Some("en".into())
+        );
+        assert_eq!(e.active.as_ref().unwrap().title, "same title");
+        assert_eq!(e.focus_window("terminal", "new title", "window-b"), None);
+        assert_eq!(e.active.as_ref().unwrap().title, "new title");
     }
 
     #[test]
