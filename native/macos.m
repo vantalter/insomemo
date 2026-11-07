@@ -152,9 +152,13 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     emit(@"ready", @"", @"");
     [self layoutChanged:nil];
     [self activated:nil];
-    if (!self.trusted)
-        emit(@"error", @"App tracking active. Grant Accessibility access for window/tab tracking.",
-             @"");
+    [self reportTrust];
+}
+- (void)reportTrust {
+    emit(@"warning",
+         self.trusted ? @""
+                      : @"App tracking active. Grant Accessibility access for window/tab tracking.",
+         @"");
 }
 - (void)removeObserver {
     if (self.observer)
@@ -179,7 +183,11 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
         return;
     [self removeObserver];
     self.activeApp = app;
-    self.trusted = AXIsProcessTrusted();
+    BOOL trusted = AXIsProcessTrusted();
+    if (trusted != self.trusted) {
+        self.trusted = trusted;
+        [self reportTrust];
+    }
     if (self.trusted) {
         AXUIElementRef axApp = AXUIElementCreateApplication(app.processIdentifier);
         self.observedApp = axApp;

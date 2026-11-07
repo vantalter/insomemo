@@ -1,8 +1,55 @@
 # Insomemo
 
-A small Rust daemon that remembers your keyboard layout for each application and, for selected apps, each window or tab title. Native menu-bar controls on macOS; a StatusNotifier tray on Linux. No webview, telemetry, ads, network service, or polling loop.
+**Your keyboard layout, remembered per window, per tab, and per conversation — on Linux and macOS.**
 
-For example: choose Ukrainian in a Slack conversation, English in a terminal tab, then return to either. Insomemo restores the layout associated with that context. Most apps must expose tab/conversation changes through their window title; Ghostty's native macOS tabs are tracked separately by window identity.
+Switch to Ukrainian in one Slack conversation and English in a terminal tab. Insomemo learns each choice as you make it and restores it whenever you return to that window, tab, or chat. There are no rules to write: the layout you pick in a context is the layout that context gets next time.
+
+It is a small Rust daemon (about 400 KiB) with a native tray on both platforms. No webview, telemetry, ads, network service, or polling loop.
+
+## Why Insomemo
+
+- **Linux first-class.** X11, Sway, and Hyprland are supported natively through EWMH/XKB and compositor IPC, with a StatusNotifier tray for KDE, Waybar, and other hosts. Per-window layout memory on Linux usually depends on your desktop environment; Insomemo behaves the same on X11, Sway, Hyprland, and macOS.
+- **Learns per window, not just per app.** For terminals, chat apps, and browsers, each window or tab title is its own context. Ghostty's native macOS tabs are tracked by window identity, so tabs with the same title stay separate.
+- **Zero configuration.** Change the layout once in a context and it is remembered. The first choice in an app also becomes that app's fallback for contexts it has not seen yet.
+- **Private by design.** Titles are stored only as truncated SHA-256 hashes in a user-private state file. Nothing leaves your machine, and Insomemo never reads keystrokes or page content.
+
+### Compared with alternatives
+
+| | Insomemo | Rule-based switchers (e.g. [Input Source Pro](https://github.com/runjuu/InputSourcePro)) | macOS “switch to a document's input source” |
+| --- | --- | --- | --- |
+| Linux (X11, Sway, Hyprland) | ✓ | – | – |
+| Per window / tab / conversation | ✓ learned automatically | per app or website, configured by hand | per document window, only in supporting apps |
+| Setup | none | a rule per app or site | a system setting |
+
+If you only need fixed per-app or per-website rules on macOS, a rule-based switcher with more features may suit you better. Insomemo is for layouts that follow individual windows and conversations, on every desktop you use.
+
+## Supported desktops
+
+| Session | Integration | Availability |
+| --- | --- | --- |
+| Linux X11 | EWMH active window, WM_CLASS/title events, XKB group notifications | Implemented; Linux CI smoke test supplied |
+| Sway | Window/input/workspace IPC subscriptions | Implemented; framing tested, desktop validation needed |
+| Hyprland | Active window/title/layout IPC events | Implemented; framing tested, desktop validation needed |
+| macOS 12+ | NSWorkspace, Accessibility observers, Carbon input sources, NSStatusItem | Built and unit-tested on Apple Silicon |
+| GNOME/KDE Wayland | Requires compositor-specific extension | Not supported in this version |
+
+Context depends on what an app exposes: most apps must reflect tab or conversation changes in their window title. Ghostty on macOS is tracked by window identity instead.
+
+## Build and run on Linux
+
+Development dependencies on Debian/Ubuntu:
+
+```sh
+sudo apt install build-essential pkg-config libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev
+cargo build --release --locked
+./target/release/insomemo
+```
+
+The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. The tray shows an icon without an input-source label; its tooltip identifies Insomemo and the active context. Without a tray host, switching continues and SIGTERM quits cleanly.
+
+Sway and Hyprland are detected before X11 from `SWAYSOCK` / `HYPRLAND_INSTANCE_SIGNATURE`. Other Wayland sessions fail explicitly; XWayland cannot provide complete context for native Wayland applications. Run the daemon inside the graphical session so it inherits compositor and D-Bus environment variables.
+
+X11 uses the core keyboard. On Wayland, the first Sway keyboard or the main Hyprland keyboard is selected. Set `keyboard` in the configuration to choose a particular Sway identifier or Hyprland device name. Only that keyboard is tracked and switched; multiple independently configured keyboards are not synchronized. Hyprland's named XKB rules are supported; custom `kb_file` keymaps need additional integration.
 
 ## Build and run on macOS
 
@@ -26,30 +73,6 @@ cargo run --release --locked
 ```
 
 The build targets the host architecture. Build natively on Apple Silicon or Intel; a universal binary is not produced. macOS 12 or newer is the deployment target.
-
-## Linux
-
-Development dependencies on Debian/Ubuntu:
-
-```sh
-sudo apt install build-essential pkg-config libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev
-cargo build --release --locked
-./target/release/insomemo
-```
-
-The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. The tray shows an icon without an input-source label; its tooltip identifies Insomemo and the active context. Without a tray host, switching continues and SIGTERM quits cleanly.
-
-| Session | Integration | Availability |
-| --- | --- | --- |
-| macOS | NSWorkspace, Accessibility observers, Carbon input sources, NSStatusItem | Built and unit-tested on Apple Silicon |
-| Linux X11 | EWMH active window, WM_CLASS/title events, XKB group notifications | Implemented; Linux CI smoke test supplied |
-| Sway | Window/input/workspace IPC subscriptions | Implemented; framing tested locally, desktop validation needed |
-| Hyprland | Active window/title/layout IPC events | Implemented; framing tested locally, desktop validation needed |
-| GNOME/KDE Wayland | Requires compositor-specific extension | Not supported in this version |
-
-Sway and Hyprland are detected before X11 from `SWAYSOCK` / `HYPRLAND_INSTANCE_SIGNATURE`. Other Wayland sessions fail explicitly; XWayland cannot provide complete context for native Wayland applications. Run the daemon inside the graphical session so it inherits compositor and D-Bus environment variables.
-
-X11 uses the core keyboard. On Wayland, the first Sway keyboard or the main Hyprland keyboard is selected. Set `keyboard` in the configuration to choose a particular Sway identifier or Hyprland device name. Only that keyboard is tracked and switched; multiple independently configured keyboards are not synchronized. Hyprland's named XKB rules are supported; custom `kb_file` keymaps need additional integration.
 
 ## Configuration
 
@@ -77,13 +100,13 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 
 ## How memory works
 
-1. Each context is an app identifier, optionally followed by `:` and the first 16 hex characters of SHA-256 of its normalized title. Ghostty on macOS uses its accessibility window identity instead, so tabs with the same title remain separate and title changes stay in the same tab context. These Ghostty identities last for the Ghostty process; after Ghostty restarts, the app fallback applies until each tab learns a layout again. For title-based apps, whitespace is collapsed; titles are otherwise preserved unless a configured suffix matches. Unread counts, terminal working directories, and renamed documents can produce new contexts.
+1. Each context is an app identifier, optionally followed by `:` and the first 16 hex characters of SHA-256 of its normalized title. Ghostty on macOS uses its accessibility window identity instead, so tabs with the same title remain separate and title changes stay in the same tab context. These Ghostty identities last for the Ghostty process, so they are kept in memory only (with their own 200-entry budget) and never written to `state.json`; after either app restarts, the Ghostty app fallback applies until each tab learns a layout again. For title-based apps, whitespace is collapsed; titles are otherwise preserved unless a configured suffix matches. Unread counts, terminal working directories, and renamed documents can produce new contexts.
 2. On focus/title change, the daemon tries the exact context, its app fallback, then the optional global default. Without a match, it leaves the layout alone.
 3. A manual layout change teaches the active context. The first manual choice in a title-tracked app also establishes its app fallback. Later tab-specific changes preserve that fallback. Automatic restores are not learned as manual choices.
 4. App defaults and title contexts share a 200-entry LRU budget. Least recently used entries are evicted, including app fallbacks. Access order updates in memory and is persisted with the next state write.
 5. Changes save atomically after two seconds of inactivity. Quit, SIGINT, and SIGTERM flush pending changes. A corrupt/unknown-version state file is preserved and startup fails with an explanation. A file lock prevents two instances from modifying the same state directory.
 
-`state.json` contains layout IDs, app IDs, title or window-identity hashes, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
+`state.json` contains layout IDs, app IDs, title hashes, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
 
 **Pause Auto-Switching** freezes both switching and learning. Resuming restores the focused context. **Force Default Layout** selects a layout immediately, sets the global fallback, and updates the current context and its app fallback. **Clear Cache** removes learned contexts and the tray-selected default; it retains a default explicitly specified in config. Clear/default actions use the same debounced persistence as manual layout changes.
 
@@ -100,7 +123,7 @@ make test
 make check
 ```
 
-Tests cover context restoration, fallback, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI runs `scripts/smoke-linux.py` under Xvfb and a session D-Bus to exercise the native tray and persistence. The CI workflow is supplied but has not been run from this workspace.
+Tests cover context restoration, fallback, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI runs `scripts/smoke-linux.py` under Xvfb and a session D-Bus to exercise the native tray and persistence.
 
 Manual desktop acceptance checks:
 

@@ -20,6 +20,8 @@ struct App {
     store: Store,
     layouts: Vec<Layout>,
     error: String,
+    /// Persistent condition (missing permission) shown when no error is active.
+    warning: String,
     save_failed: bool,
     fatal_error: Option<String>,
 }
@@ -69,11 +71,16 @@ fn update_tray() {
             })
             .unwrap_or_else(|| "No focused application".into());
         let layouts = serde_json::to_string(&app.layouts).unwrap();
+        let message = if app.error.is_empty() {
+            &app.warning
+        } else {
+            &app.error
+        };
         unsafe {
             native::native_update(
                 cstring(&context).as_ptr(),
                 engine.paused as i32,
-                cstring(&app.error).as_ptr(),
+                cstring(message).as_ptr(),
                 cstring(&layouts).as_ptr(),
             );
         }
@@ -204,6 +211,10 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str) {
             "clear" => {
                 engine.clear();
                 save = true;
+                None
+            }
+            "warning" => {
+                app.warning = first.into();
                 None
             }
             "error" => {
@@ -344,6 +355,7 @@ fn run() -> Result<(), String> {
             store,
             layouts: Vec::new(),
             error: String::new(),
+            warning: String::new(),
             save_failed: false,
             fatal_error: None,
         })
