@@ -60,7 +60,7 @@ make app
 open "dist/Insomemo.app"
 ```
 
-The app lives in the menu bar, without a Dock icon. Its monochrome stacked-keyboard symbol automatically renders white or dark to match the macOS menu bar. The tray is icon-only; the OS input menu shows the current language. Pausing dims the macOS icon while keeping its menu available. The purple app artwork is bundled as a multi-resolution macOS icon; artwork and preparation notes are in [assets](assets/README.md).
+The app lives in the menu bar, without a Dock icon. Its monochrome keyboard/sync symbol automatically renders white or dark to match the macOS menu bar. The tray is icon-only; the OS input menu shows the current language. Pausing dims the macOS icon while keeping its menu available. The purple app artwork is bundled as a multi-resolution macOS icon; artwork and preparation notes are in [assets](assets/README.md).
 
 To place Insomemo beside the macOS input-source icon, hold **Command** and drag the Insomemo icon there. The status item has a stable macOS autosave name so the system can retain its identity across launches. If the system input-source icon is hidden, Insomemo remains in its normal menu-bar position. macOS does not provide a supported API to position this app automatically relative to that system icon.
 
@@ -104,7 +104,7 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 2. On focus/title change, the daemon tries the exact context, its app fallback, then the optional global default. Without a match, it leaves the layout alone.
 3. A manual layout change teaches the active context. The first manual choice in a title-tracked app also establishes its app fallback. Later tab-specific changes preserve that fallback. Automatic restores are not learned as manual choices.
 4. App defaults and title contexts share a 200-entry LRU budget. Least recently used entries are evicted, including app fallbacks. Access order updates in memory and is persisted with the next state write.
-5. Changes save atomically after two seconds of inactivity. Quit, SIGINT, and SIGTERM flush pending changes. A corrupt/unknown-version state file is preserved and startup fails with an explanation. A file lock prevents two instances from modifying the same state directory.
+5. Changes save atomically after two seconds of inactivity. Quit, SIGINT, and SIGTERM flush pending changes. A corrupt/unknown-version state file is preserved and startup fails with an explanation. Unknown fields written by a newer build are ignored, so downgrading keeps your learned layouts. A file lock prevents two instances from modifying the same state directory.
 
 `state.json` contains layout IDs, app IDs, title hashes, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
 
