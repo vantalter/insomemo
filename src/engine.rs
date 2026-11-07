@@ -10,8 +10,9 @@ pub struct Entry {
     pub used: u64,
 }
 
+/// Unknown fields are ignored so a downgrade can read state from a newer build;
+/// incompatible formats must bump `version` instead.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct State {
     pub version: u32,
     pub entries: BTreeMap<String, Entry>,
@@ -407,5 +408,12 @@ mod tests {
         e.clear();
         e.selected("ua", true);
         assert_eq!(e.focus_window("terminal", "shell", "window-b"), None);
+    }
+
+    #[test]
+    fn state_from_newer_build_loads() {
+        let newer = r#"{"version":1,"entries":{},"default_layout":"ua","future_flag":true}"#;
+        let state: State = serde_json::from_str(newer).unwrap();
+        assert_eq!(state.default_layout.as_deref(), Some("ua"));
     }
 }
