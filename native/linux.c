@@ -79,12 +79,21 @@ static int x_error(Display *d, XErrorEvent *e) {
         fprintf(stderr, "insomemo: X11 error %d\n", e->error_code);
     return 0;
 }
+static int x_io_error(Display *d) {
+    (void)d;
+    fprintf(stderr, "insomemo: X11 connection lost\n");
+    // Xlib exits the process when this handler returns; flush learned layouts first.
+    emit("quit", "", "");
+    return 0;
+}
 static int ensure_display(void) {
     if (display)
         return 1;
     display = XOpenDisplay(NULL);
-    if (display)
+    if (display) {
         XSetErrorHandler(x_error);
+        XSetIOErrorHandler(x_io_error);
+    }
     return display != NULL;
 }
 
