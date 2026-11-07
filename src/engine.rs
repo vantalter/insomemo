@@ -34,6 +34,7 @@ pub struct Context {
     pub app: String,
     pub title: String,
     pub key: String,
+    pub window_id: String,
 }
 
 pub struct Engine {
@@ -74,6 +75,7 @@ impl Engine {
         engine
     }
 
+    #[cfg(test)]
     pub fn focus(&mut self, app: &str, title: &str) -> Option<String> {
         self.focus_window(app, title, "")
     }
@@ -101,6 +103,7 @@ impl Engine {
             app: app.into(),
             title,
             key: key.clone(),
+            window_id: window_id.into(),
         });
         if unchanged {
             return None;
@@ -205,7 +208,7 @@ impl Engine {
         if !self.paused
             && let Some(context) = self.active.take()
         {
-            return self.focus(&context.app, &context.title);
+            return self.focus_window(&context.app, &context.title, &context.window_id);
         }
         None
     }
@@ -349,5 +352,20 @@ mod tests {
         assert!(e.state.entries.is_empty());
         assert!(e.state.default_layout.is_none());
         assert!(e.dirty);
+    }
+
+    #[test]
+    fn resume_keeps_window_identity() {
+        let mut e = engine();
+        e.focus_window("terminal", "same title", "window-a");
+        assert!(e.layout_changed("ua"));
+        e.focus_window("terminal", "same title", "window-b");
+        assert!(e.layout_changed("en"));
+        e.focus_window("terminal", "same title", "window-a");
+        e.selected("ua", true);
+        e.toggle_pause();
+        e.current_layout = "en".into();
+        assert_eq!(e.toggle_pause(), Some("ua".into()));
+        assert_eq!(e.focus_window("terminal", "same title", "window-a"), None);
     }
 }
