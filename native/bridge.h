@@ -13,3 +13,4 @@ void native_update(const char *context, int paused, const char *error, const cha
 void native_schedule_save(void);
 void native_stop(void);
 void native_hash(const char *text, char *output);
+void native_alert(const char *message); /* macOS only; blocks until dismissed */

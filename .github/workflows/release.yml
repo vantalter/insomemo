@@ -1,0 +1,103 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        name: Tag matches Cargo.toml
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - run: cargo test --locked
+      - name: Universal app bundle
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir -p target/universal
+          lipo -create -output target/universal/insomemo \
+            target/aarch64-apple-darwin/release/insomemo \
+            target/x86_64-apple-darwin/release/insomemo
+          python3 scripts/bundle-macos.py target/universal/insomemo
+          ditto -c -k --keepParent dist/Insomemo.app \
+            "Insomemo-${{ needs.version.outputs.version }}-macos-universal.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: Insomemo-*.zip
+
+  linux:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          # 22.04 keeps the glibc requirement at 2.35 for older distributions.
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: ubuntu-22.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev pkg-config xvfb x11-xkb-utils dbus-x11
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Runtime smoke test
+        run: dbus-run-session -- xvfb-run -a python3 scripts/smoke-linux.py
+      - name: Tarball
+        run: |
+          name="insomemo-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}"
+          mkdir "$name"
+          cp target/release/insomemo packaging/insomemo.desktop packaging/insomemo.service \
+            README.md LICENSE "$name/"
+          tar -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: insomemo-*.tar.gz
+
+  publish:
+    needs: [version, macos, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: assets
+          merge-multiple: true
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cd assets
+          sha256sum * > SHA256SUMS
+          prerelease=""
+          case "$VERSION" in 0.*|*-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" * $prerelease --generate-notes \
+            --title "Insomemo $VERSION" --notes-file ../.github/release-notes.md

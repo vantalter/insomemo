@@ -22,6 +22,8 @@ unsafe extern "C" {
     pub fn native_schedule_save();
     pub fn native_stop();
     fn native_hash(text: *const c_char, output: *mut c_char);
+    #[cfg(target_os = "macos")]
+    pub fn native_alert(message: *const c_char);
 }
 
 pub fn cstring(value: &str) -> CString {
