@@ -9,7 +9,8 @@ int native_run(int event_fd);
 int native_set_layout(const char *id);
 char *native_layouts(void);
 void native_free(char *value);
-void native_update(const char *context, int paused, const char *error, const char *layouts_json);
+void native_update(const char *context, int paused, int address_bar_enabled, const char *error,
+                   const char *layouts_json);
 void native_schedule_save(void);
 void native_stop(void);
 void native_hash(const char *text, char *output);

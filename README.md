@@ -69,11 +69,11 @@ See [config/example.json](config/example.json). Restart after editing configurat
 | `title_tracking_apps` | Exact app identifiers for which titles define separate contexts |
 | `title_suffixes` | Optional exact trailing strings removed after whitespace normalization |
 | `default_layout` | Optional fallback layout ID; `null` leaves unknown apps unchanged |
-| `browser_address_bar_layout` | macOS input source ID to use while a browser address field is focused; `null` disables the override |
+| `browser_address_bar_layout` | macOS input source ID for browser address fields; `null` automatically chooses an installed English source |
 | `browser_address_bar_apps` | Subset of supported browsers eligible for the override: Chrome, Safari, Firefox |
 | `keyboard` | Optional Wayland keyboard identifier/name; `null` chooses automatically |
 
-To use English in browser address fields, find your installed English input source with `--list-layouts`, set its exact `id` as `browser_address_bar_layout`, and restart Insomemo. The override uses macOS Accessibility focus events and requires Accessibility permission. It applies to toolbar text fields in the browsers listed in `browser_address_bar_apps`; a layout selected there is not learned as the tab's layout. On leaving the field, the tab's remembered layout is restored, or the pre-address-field layout if the tab has no match. The option is macOS only.
+**English in Browser Address/Search Bar** is enabled by default on macOS and can be turned on or off in the tray menu. The choice is saved in `state.json`. Insomemo selects the U.S. English source when installed, otherwise the first installed English source. Set `browser_address_bar_layout` to an exact ID from `--list-layouts` to choose a different source. The override uses macOS Accessibility focus events and requires Accessibility permission. It applies to the browser address/search field in the browsers listed in `browser_address_bar_apps`; a layout selected there is not learned as the tab's layout. On leaving the field, the tab's remembered layout is restored, or the pre-address-field layout if the tab has no match. The option is macOS only.
 
 For example, use `"browser_address_bar_layout": "com.apple.keylayout.US"` if `--list-layouts` reports that ID for your English source.
 
@@ -89,7 +89,7 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 4. App defaults and title contexts share a 200-entry LRU budget. Least recently used entries are evicted, including app fallbacks. Access order updates in memory and is persisted with the next state write.
 5. Changes save atomically after two seconds of inactivity. Quit, SIGINT, and SIGTERM flush pending changes. A corrupt/unknown-version state file is preserved and startup fails with an explanation. A file lock prevents two instances from modifying the same state directory.
 
-`state.json` contains layout IDs, app IDs, title or window-identity hashes, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
+`state.json` contains layout IDs, app IDs, title or window-identity hashes, recency counters, and the browser address-bar preference, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
 
 **Pause Auto-Switching** freezes both switching and learning. Resuming restores the focused context. **Force Default Layout** selects a layout immediately, sets the global fallback, and updates the current context and its app fallback. **Clear Cache** removes learned contexts and the tray-selected default; it retains a default explicitly specified in config. Clear/default actions use the same debounced persistence as manual layout changes.
 

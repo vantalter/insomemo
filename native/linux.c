@@ -602,7 +602,9 @@ static void watcher_vanished(GDBusConnection *connection, const gchar *name, gpo
             "insomemo: no StatusNotifier tray host; daemon remains active (SIGTERM to quit)\n");
 }
 
-void native_update(const char *context, int paused, const char *error, const char *layouts_json) {
+void native_update(const char *context, int paused, int address_bar_enabled, const char *error,
+                   const char *layouts_json) {
+    (void)address_bar_enabled;
     gboolean changed = g_strcmp0(tray_context, context) || g_strcmp0(tray_error, error) ||
                        tray_paused != paused || g_strcmp0(last_layouts, layouts_json);
     if (!changed)

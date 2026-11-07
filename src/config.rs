@@ -8,7 +8,7 @@ pub struct Config {
     /// Exact suffixes removed before hashing; no fuzzy matching of conversations.
     pub title_suffixes: Vec<String>,
     pub default_layout: Option<String>,
-    /// macOS only: input source selected while a browser address field has focus.
+    /// macOS only: explicit address-field input source; None chooses installed English.
     pub browser_address_bar_layout: Option<String>,
     /// Subset of supported macOS browser bundle IDs eligible for the override.
     pub browser_address_bar_apps: Vec<String>,

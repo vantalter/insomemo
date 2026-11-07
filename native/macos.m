@@ -24,7 +24,33 @@ static NSString *shortcode(TISInputSourceRef source) {
     return [code isEqualToString:@"UK"] ? @"UA" : code;
 }
 
-static BOOL focusedBrowserToolbarField(AXUIElementRef app) {
+static BOOL addressFieldLabel(AXUIElementRef element) {
+    CFStringRef attributes[] = {kAXIdentifierAttribute, kAXDescriptionAttribute,
+                                kAXTitleAttribute, kAXHelpAttribute,
+                                kAXPlaceholderValueAttribute};
+    NSArray<NSString *> *terms = @[@"address", @"url", @"omnibox", @"location", @"smart search"];
+    for (NSUInteger index = 0; index < sizeof(attributes) / sizeof(attributes[0]); index++) {
+        CFTypeRef value = NULL;
+        if (AXUIElementCopyAttributeValue(element, attributes[index], &value) != kAXErrorSuccess ||
+            !value)
+            continue;
+        BOOL match = NO;
+        if (CFGetTypeID(value) == CFStringGetTypeID()) {
+            NSString *label = [(__bridge NSString *)value lowercaseString];
+            for (NSString *term in terms)
+                if ([label containsString:term]) {
+                    match = YES;
+                    break;
+                }
+        }
+        CFRelease(value);
+        if (match)
+            return YES;
+    }
+    return NO;
+}
+
+static BOOL focusedBrowserAddressField(AXUIElementRef app) {
     AXUIElementRef element = NULL;
     if (AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute,
                                       (CFTypeRef *)&element) != kAXErrorSuccess || !element)
@@ -36,22 +62,25 @@ static BOOL focusedBrowserToolbarField(AXUIElementRef app) {
                     CFEqual(role, kAXTextAreaRole);
         CFRelease(role);
     }
+    // Labels identify address fields outside a toolbar, but only editable
+    // elements qualify; a focused "Copy URL" button must not switch layouts.
     if (!textField) {
         CFRelease(element);
         return NO;
     }
-    // Browser chrome lives in a toolbar; page text fields live under AXWebArea.
-    for (NSUInteger depth = 0; depth < 12; depth++) {
+    BOOL namedAddressField = addressFieldLabel(element);
+    BOOL toolbar = NO;
+    BOOL webArea = NO;
+    // Browser chrome varies by browser. Exclude fields inside webpage content.
+    for (NSUInteger depth = 0; depth < 16; depth++) {
         role = NULL;
         if (AXUIElementCopyAttributeValue(element, kAXRoleAttribute, &role) == kAXErrorSuccess &&
             role) {
-            BOOL toolbar = CFEqual(role, kAXToolbarRole);
-            BOOL webArea = CFEqual(role, CFSTR("AXWebArea"));
+            toolbar |= CFEqual(role, kAXToolbarRole);
+            webArea |= CFEqual(role, CFSTR("AXWebArea"));
             CFRelease(role);
-            if (toolbar || webArea) {
-                CFRelease(element);
-                return toolbar;
-            }
+            if (webArea)
+                break;
         }
         AXUIElementRef parent = NULL;
         if (AXUIElementCopyAttributeValue(element, kAXParentAttribute,
@@ -61,7 +90,7 @@ static BOOL focusedBrowserToolbarField(AXUIElementRef app) {
         element = parent;
     }
     CFRelease(element);
-    return NO;
+    return !webArea && (toolbar || namedAddressField);
 }
 
 static NSArray *layoutList(void) {
@@ -93,6 +122,7 @@ static NSArray *layoutList(void) {
 @property NSStatusItem *status;
 @property NSMenuItem *contextItem;
 @property NSMenuItem *pauseItem;
+@property NSMenuItem *addressBarItem;
 @property NSMenuItem *errorItem;
 @property NSMenu *layoutsMenu;
 @property NSTimer *saveTimer;
@@ -156,6 +186,10 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                      action:@selector(pause:)
                               keyEquivalent:@""];
     self.pauseItem.target = self;
+    self.addressBarItem = [menu addItemWithTitle:@"English in Browser Address/Search Bar"
+                                         action:@selector(toggleAddressBar:)
+                                  keyEquivalent:@""];
+    self.addressBarItem.target = self;
     NSMenuItem *defaults = [menu addItemWithTitle:@"Force Default Layout"
                                            action:nil
                                     keyEquivalent:@""];
@@ -251,7 +285,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     BOOL browser = [identifier isEqualToString:@"com.google.Chrome"] ||
                    [identifier isEqualToString:@"com.apple.Safari"] ||
                    [identifier isEqualToString:@"org.mozilla.firefox"];
-    BOOL addressBar = browser && self.observedApp && focusedBrowserToolbarField(self.observedApp);
+    BOOL addressBar = browser && self.observedApp && focusedBrowserAddressField(self.observedApp);
     if (self.observedApp) {
         AXUIElementRef window = NULL;
         // AppKit native tabs are separate AX windows. The selected tab can
@@ -268,11 +302,18 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                     if (self.observer)
                         AXObserverRemoveNotification(self.observer, self.observedWindow,
                                                      kAXTitleChangedNotification);
+                    if (self.observer)
+                        AXObserverRemoveNotification(self.observer, self.observedWindow,
+                                                     kAXFocusedUIElementChangedNotification);
                     CFRelease(self.observedWindow);
                 }
                 self.observedWindow = window;
                 if (self.observer)
                     AXObserverAddNotification(self.observer, window, kAXTitleChangedNotification,
+                                              (__bridge void *)self);
+                if (self.observer)
+                    AXObserverAddNotification(self.observer, window,
+                                              kAXFocusedUIElementChangedNotification,
                                               (__bridge void *)self);
             } else {
                 CFRelease(window);
@@ -309,6 +350,12 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 - (void)pause:(id)sender {
     emit(@"pause", @"", @"");
 }
+- (void)toggleAddressBar:(id)sender {
+    emit(@"address-toggle", @"", @"");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self readContext];
+    });
+}
 - (void)clear:(id)sender {
     emit(@"clear", @"", @"");
 }
@@ -336,9 +383,16 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                        void *context) {
     (void)observer;
     (void)element;
-    (void)notification;
     @autoreleasepool {
-        [(__bridge Switcher *)context readContext];
+        Switcher *switcher = (__bridge Switcher *)context;
+        if (CFEqual(notification, kAXFocusedUIElementChangedNotification)) {
+            // Some browsers post focus before updating AXFocusedUIElement.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [switcher readContext];
+            });
+        } else {
+            [switcher readContext];
+        }
     }
 }
 
@@ -377,7 +431,8 @@ char *native_layouts(void) {
 }
 void native_free(char *value) { free(value); }
 
-void native_update(const char *context, int paused, const char *error, const char *layouts_json) {
+void native_update(const char *context, int paused, int address_bar_enabled, const char *error,
+                   const char *layouts_json) {
     if (!delegate.status)
         return;
     delegate.status.button.appearsDisabled = paused;
@@ -385,6 +440,8 @@ void native_update(const char *context, int paused, const char *error, const cha
         [NSString stringWithFormat:@"Insomemo%@ — %@", paused ? @" (Paused)" : @"", @(context)];
     delegate.contextItem.title = [@"Active Context: " stringByAppendingString:@(context)];
     delegate.pauseItem.title = paused ? @"Resume Auto-Switching" : @"Pause Auto-Switching";
+    delegate.addressBarItem.state =
+        address_bar_enabled ? NSControlStateValueOn : NSControlStateValueOff;
     delegate.errorItem.title = @(error);
     delegate.errorItem.hidden = strlen(error) == 0;
     NSString *json = @(layouts_json);
