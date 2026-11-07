@@ -35,6 +35,8 @@ pub struct Context {
     pub title: String,
     pub key: String,
     pub window_id: String,
+    /// Window identities do not survive an app restart, so they are not persisted.
+    pub session: bool,
 }
 
 pub struct Engine {
@@ -45,6 +47,8 @@ pub struct Engine {
     pub paused: bool,
     pub dirty: bool,
     pending: Option<String>,
+    /// Session-only contexts keyed by window identity; bounded like `state.entries`.
+    windows: BTreeMap<String, Entry>,
     clock: u64,
 }
 
@@ -69,6 +73,7 @@ impl Engine {
             paused: false,
             dirty: false,
             pending: None,
+            windows: BTreeMap::new(),
             clock,
         };
         engine.prune();
@@ -88,7 +93,8 @@ impl Engine {
         }
         let title = self.config.clean_title(title);
         let track = self.config.title_tracking_apps.iter().any(|a| a == app);
-        let key = if track && !window_id.is_empty() {
+        let session = track && !window_id.is_empty();
+        let key = if session {
             format!(
                 "{app}:{}",
                 crate::native::title_hash(&format!("window:{window_id}"))
@@ -104,21 +110,26 @@ impl Engine {
             title,
             key: key.clone(),
             window_id: window_id.into(),
+            session,
         });
         if unchanged {
             return None;
         }
         self.pending = None;
         self.clock += 1;
-        let desired = self
-            .state
-            .entries
-            .get_mut(&key)
-            .map(|e| {
+        let exact = if session {
+            self.windows.get_mut(&key).map(|e| {
+                e.used = self.clock;
+                e.layout.clone()
+            })
+        } else {
+            self.state.entries.get_mut(&key).map(|e| {
                 self.dirty = true; // Persist recency on the next save or graceful exit.
                 e.used = self.clock;
                 e.layout.clone()
             })
+        };
+        let desired = exact
             .or_else(|| {
                 self.state.entries.get_mut(app).map(|e| {
                     self.dirty = true;
@@ -168,36 +179,30 @@ impl Engine {
         // The first manual choice establishes an app fallback. Later choices in
         // a title-tracked context do not overwrite that fallback for other tabs.
         if !self.state.entries.contains_key(&context.app) {
-            self.remember(context.app, layout);
+            self.remember(context.app, layout, false);
         }
-        self.remember(context.key, layout);
+        self.remember(context.key, layout, context.session);
         true
     }
 
-    fn remember(&mut self, key: String, layout: &str) {
+    fn remember(&mut self, key: String, layout: &str, session: bool) {
         self.clock += 1;
-        self.state.entries.insert(
-            key,
-            Entry {
-                layout: layout.into(),
-                used: self.clock,
-            },
-        );
-        self.dirty = true;
-        self.prune();
+        let entry = Entry {
+            layout: layout.into(),
+            used: self.clock,
+        };
+        if session {
+            self.windows.insert(key, entry);
+            evict_least_recent(&mut self.windows);
+        } else {
+            self.state.entries.insert(key, entry);
+            self.dirty = true;
+            self.prune();
+        }
     }
 
     fn prune(&mut self) {
-        while self.state.entries.len() > CAPACITY {
-            let key = self
-                .state
-                .entries
-                .iter()
-                .min_by_key(|(_, v)| v.used)
-                .unwrap()
-                .0
-                .clone();
-            self.state.entries.remove(&key);
+        if evict_least_recent(&mut self.state.entries) {
             self.dirty = true;
         }
     }
@@ -217,8 +222,8 @@ impl Engine {
         self.state.default_layout = Some(layout.into());
         // Explicit override for the current context and its application's default.
         if let Some(context) = self.active.clone() {
-            self.remember(context.app, layout);
-            self.remember(context.key, layout);
+            self.remember(context.app, layout, false);
+            self.remember(context.key, layout, context.session);
         }
         self.dirty = true;
         self.request(Some(layout.into()))
@@ -226,10 +231,27 @@ impl Engine {
 
     pub fn clear(&mut self) {
         self.state.entries.clear();
+        self.windows.clear();
         self.state.default_layout = None;
         self.pending = None;
         self.dirty = true;
     }
+}
+
+/// Trims `entries` to `CAPACITY`; returns whether anything was evicted.
+fn evict_least_recent(entries: &mut BTreeMap<String, Entry>) -> bool {
+    let mut evicted = false;
+    while entries.len() > CAPACITY {
+        let key = entries
+            .iter()
+            .min_by_key(|(_, v)| v.used)
+            .unwrap()
+            .0
+            .clone();
+        entries.remove(&key);
+        evicted = true;
+    }
+    evicted
 }
 
 #[cfg(test)]
@@ -367,5 +389,23 @@ mod tests {
         e.current_layout = "en".into();
         assert_eq!(e.toggle_pause(), Some("ua".into()));
         assert_eq!(e.focus_window("terminal", "same title", "window-a"), None);
+    }
+
+    #[test]
+    fn window_identities_are_remembered_only_for_the_session() {
+        let mut e = engine();
+        e.focus_window("terminal", "shell", "window-a");
+        assert!(e.layout_changed("ua"));
+        e.focus_window("terminal", "shell", "window-b");
+        assert!(e.layout_changed("en"));
+        assert_eq!(
+            e.focus_window("terminal", "shell", "window-a"),
+            Some("ua".into())
+        );
+        // Only the app fallback is persisted; window keys never reach state.json.
+        assert_eq!(e.state.entries.keys().collect::<Vec<_>>(), vec!["terminal"]);
+        e.clear();
+        e.selected("ua", true);
+        assert_eq!(e.focus_window("terminal", "shell", "window-b"), None);
     }
 }
