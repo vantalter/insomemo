@@ -34,8 +34,6 @@ pub struct Context {
     pub app: String,
     pub title: String,
     pub key: String,
-    pub window_id: String,
-    pub address_bar: bool,
 }
 
 pub struct Engine {
@@ -46,7 +44,6 @@ pub struct Engine {
     pub paused: bool,
     pub dirty: bool,
     pending: Option<String>,
-    address_bar_previous_layout: Option<String>,
     clock: u64,
 }
 
@@ -71,7 +68,6 @@ impl Engine {
             paused: false,
             dirty: false,
             pending: None,
-            address_bar_previous_layout: None,
             clock,
         };
         engine.prune();
@@ -83,20 +79,9 @@ impl Engine {
     }
 
     pub fn focus_window(&mut self, app: &str, title: &str, window_id: &str) -> Option<String> {
-        self.focus_context(app, title, window_id, false)
-    }
-
-    pub fn focus_context(
-        &mut self,
-        app: &str,
-        title: &str,
-        window_id: &str,
-        address_bar: bool,
-    ) -> Option<String> {
         if app.is_empty() {
             self.active = None;
             self.pending = None;
-            self.address_bar_previous_layout = None;
             return None;
         }
         let title = self.config.clean_title(title);
@@ -111,49 +96,16 @@ impl Engine {
         } else {
             app.to_owned()
         };
-        let address_bar = address_bar
-            && self.config.browser_address_bar_layout.is_some()
-            && self
-                .config
-                .browser_address_bar_apps
-                .iter()
-                .any(|a| a == app);
-        let previous = self.active.as_ref();
-        let unchanged = previous.is_some_and(|c| c.key == key && c.address_bar == address_bar);
-        let return_layout =
-            if previous.is_some_and(|c| c.address_bar && c.key == key) && !address_bar {
-                self.address_bar_previous_layout.take()
-            } else {
-                None
-            };
-        if address_bar && previous.is_some_and(|c| c.address_bar && c.key != key) {
-            self.address_bar_previous_layout = None;
-        }
-        if address_bar && !previous.is_some_and(|c| c.address_bar) {
-            if self.address_bar_previous_layout.is_none() && !self.current_layout.is_empty() {
-                self.address_bar_previous_layout = Some(self.current_layout.clone());
-            }
-        } else if !address_bar {
-            self.address_bar_previous_layout = None;
-        }
+        let unchanged = self.active.as_ref().is_some_and(|c| c.key == key);
         self.active = Some(Context {
             app: app.into(),
             title,
             key: key.clone(),
-            window_id: window_id.into(),
-            address_bar,
         });
         if unchanged {
             return None;
         }
         self.pending = None;
-        if address_bar {
-            return if self.paused {
-                None
-            } else {
-                self.request(self.config.browser_address_bar_layout.clone())
-            };
-        }
         self.clock += 1;
         let desired = self
             .state
@@ -164,7 +116,6 @@ impl Engine {
                 e.used = self.clock;
                 e.layout.clone()
             })
-            .or(return_layout)
             .or_else(|| {
                 self.state.entries.get_mut(app).map(|e| {
                     self.dirty = true;
@@ -208,9 +159,6 @@ impl Engine {
         if self.paused {
             return false;
         }
-        if self.active.as_ref().is_some_and(|c| c.address_bar) {
-            return false;
-        }
         let Some(context) = self.active.clone() else {
             return false;
         };
@@ -221,13 +169,6 @@ impl Engine {
         }
         self.remember(context.key, layout);
         true
-    }
-
-    pub fn restore_address_bar_layout(&mut self) -> Option<String> {
-        if self.paused || !self.active.as_ref().is_some_and(|c| c.address_bar) {
-            return None;
-        }
-        self.request(self.config.browser_address_bar_layout.clone())
     }
 
     fn remember(&mut self, key: String, layout: &str) {
@@ -264,12 +205,7 @@ impl Engine {
         if !self.paused
             && let Some(context) = self.active.take()
         {
-            return self.focus_context(
-                &context.app,
-                &context.title,
-                &context.window_id,
-                context.address_bar,
-            );
+            return self.focus(&context.app, &context.title);
         }
         None
     }
@@ -340,85 +276,6 @@ mod tests {
         assert_eq!(e.active.as_ref().unwrap().title, "same title");
         assert_eq!(e.focus_window("terminal", "new title", "window-b"), None);
         assert_eq!(e.active.as_ref().unwrap().title, "new title");
-    }
-
-    #[test]
-    fn browser_address_bar_uses_temporary_layout_without_learning() {
-        let mut e = engine();
-        e.config.browser_address_bar_layout = Some("en".into());
-        e.focus("com.google.Chrome", "example");
-        e.layout_changed("ua");
-        let learned = e.state.entries.clone();
-        assert_eq!(
-            e.focus_context("com.google.Chrome", "example", "", true),
-            Some("en".into())
-        );
-        e.selected("en", true);
-        assert!(!e.layout_changed("de"));
-        assert_eq!(e.restore_address_bar_layout(), Some("en".into()));
-        e.selected("en", true);
-        assert_eq!(e.state.entries, learned);
-        assert_eq!(
-            e.focus_context("com.google.Chrome", "example", "", false),
-            Some("ua".into())
-        );
-    }
-
-    #[test]
-    fn address_bar_restores_prior_layout_for_unknown_context() {
-        let mut e = engine();
-        e.config.browser_address_bar_layout = Some("en".into());
-        e.config.title_tracking_apps.push("com.apple.Safari".into());
-        e.focus("com.apple.Safari", "new tab");
-        e.current_layout = "ua".into();
-        e.state.entries.insert(
-            "com.apple.Safari".into(),
-            Entry {
-                layout: "en".into(),
-                used: 1,
-            },
-        );
-        assert_eq!(
-            e.focus_context("com.apple.Safari", "new tab", "", true),
-            Some("en".into())
-        );
-        e.selected("en", true);
-        assert_eq!(e.current_layout, "en");
-        assert_eq!(e.address_bar_previous_layout.as_deref(), Some("ua"));
-        assert!(e.active.as_ref().unwrap().address_bar);
-        assert_eq!(
-            e.focus_context("com.apple.Safari", "new tab", "", false),
-            Some("ua".into())
-        );
-        assert_eq!(e.state.entries.len(), 1);
-    }
-
-    #[test]
-    fn address_bar_setting_is_limited_to_configured_browsers() {
-        let mut e = engine();
-        e.config.browser_address_bar_layout = Some("en".into());
-        e.config.browser_address_bar_apps = vec!["com.google.Chrome".into()];
-        assert_eq!(e.focus_context("com.apple.Safari", "tab", "", true), None);
-        assert!(!e.active.as_ref().unwrap().address_bar);
-    }
-
-    #[test]
-    fn pausing_in_address_bar_keeps_prior_layout_for_exit() {
-        let mut e = engine();
-        e.config.browser_address_bar_layout = Some("en".into());
-        e.focus("com.apple.Safari", "new tab");
-        e.current_layout = "ua".into();
-        assert_eq!(
-            e.focus_context("com.apple.Safari", "new tab", "", true),
-            Some("en".into())
-        );
-        e.selected("en", true);
-        e.toggle_pause();
-        assert_eq!(e.toggle_pause(), None);
-        assert_eq!(
-            e.focus_context("com.apple.Safari", "new tab", "", false),
-            Some("ua".into())
-        );
     }
 
     #[test]

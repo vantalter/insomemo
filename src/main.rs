@@ -106,10 +106,10 @@ fn flush() {
 }
 
 fn event(kind: &str, first: &str, second: &str) {
-    event_with_context(kind, first, second, "", false);
+    event_with_context(kind, first, second, "");
 }
 
-fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, address_bar: bool) {
+fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str) {
     if kind == "fatal" {
         APP.with(|slot| {
             if let Some(app) = slot.borrow_mut().as_mut() {
@@ -186,18 +186,10 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, ad
         let engine = &mut app.engine;
         let mut save = false;
         let desired = match kind {
-            "context" => {
-                if address_bar {
-                    engine.focus_context(first, second, window_id, true)
-                } else if window_id.is_empty() {
-                    engine.focus(first, second)
-                } else {
-                    engine.focus_window(first, second, window_id)
-                }
-            }
+            "context" => engine.focus_window(first, second, window_id),
             "layout" => {
                 save = engine.layout_changed(first);
-                engine.restore_address_bar_layout()
+                None
             }
             "pause" => engine.toggle_pause(),
             "default" => {
@@ -267,11 +259,10 @@ pub unsafe extern "C" fn switcher_context(
     app: *const c_char,
     title: *const c_char,
     window_id: *const c_char,
-    address_bar: i32,
 ) {
     let string = |p| unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() };
     let (app, title, window_id) = (string(app), string(title), string(window_id));
-    event_with_context("context", &app, &title, &window_id, address_bar != 0);
+    event_with_context("context", &app, &title, &window_id);
 }
 
 fn run() -> Result<(), String> {

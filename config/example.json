@@ -20,11 +20,5 @@
   ],
   "title_suffixes": [],
   "default_layout": null,
-  "browser_address_bar_layout": null,
-  "browser_address_bar_apps": [
-    "com.google.Chrome",
-    "com.apple.Safari",
-    "org.mozilla.firefox"
-  ],
   "keyboard": null
 }

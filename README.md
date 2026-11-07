@@ -69,13 +69,7 @@ See [config/example.json](config/example.json). Restart after editing configurat
 | `title_tracking_apps` | Exact app identifiers for which titles define separate contexts |
 | `title_suffixes` | Optional exact trailing strings removed after whitespace normalization |
 | `default_layout` | Optional fallback layout ID; `null` leaves unknown apps unchanged |
-| `browser_address_bar_layout` | macOS input source ID to use while a browser address field is focused; `null` disables the override |
-| `browser_address_bar_apps` | Subset of supported browsers eligible for the override: Chrome, Safari, Firefox |
 | `keyboard` | Optional Wayland keyboard identifier/name; `null` chooses automatically |
-
-To use English in browser address fields, find your installed English input source with `--list-layouts`, set its exact `id` as `browser_address_bar_layout`, and restart Insomemo. The override uses macOS Accessibility focus events and requires Accessibility permission. It applies to toolbar text fields in the browsers listed in `browser_address_bar_apps`; a layout selected there is not learned as the tab's layout. On leaving the field, the tab's remembered layout is restored, or the pre-address-field layout if the tab has no match. The option is macOS only.
-
-For example, use `"browser_address_bar_layout": "com.apple.keylayout.US"` if `--list-layouts` reports that ID for your English source.
 
 The default directory is `$XDG_CONFIG_HOME/insomemo`, falling back to `~/.config/insomemo`. `--state-dir DIR` overrides it; `--config PATH` overrides only the config file. `--check` validates config/state and checks the single-instance lock; it does not start the daemon or test graphical permissions. It creates the private directory and lock if absent.
 
