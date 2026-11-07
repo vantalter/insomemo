@@ -16,7 +16,6 @@ unsafe extern "C" {
     pub fn native_update(
         context: *const c_char,
         paused: c_int,
-        address_bar_enabled: c_int,
         error: *const c_char,
         layouts_json: *const c_char,
     );

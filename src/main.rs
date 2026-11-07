@@ -49,31 +49,6 @@ fn select_layout(layout: &str) -> bool {
     unsafe { native::native_set_layout(cstring(layout).as_ptr()) != 0 }
 }
 
-fn browser_address_bar_layout(config: &Config, layouts: &[Layout]) -> Option<String> {
-    match &config.browser_address_bar_layout {
-        Some(id) => layouts.iter().find(|layout| &layout.id == id),
-        None => layouts
-            .iter()
-            .find(|layout| layout.id == "com.apple.keylayout.US" && layout.code == "EN")
-            .or_else(|| layouts.iter().find(|layout| layout.code == "EN")),
-    }
-    .map(|layout| layout.id.clone())
-}
-
-const NO_ADDRESS_BAR_LAYOUT: &str = "No English input source available for browser address bars";
-
-/// The override is macOS only; other platforms never report a missing source.
-fn refresh_address_bar_error(app: &mut App) {
-    let missing = cfg!(target_os = "macos")
-        && app.engine.state.browser_address_bar_enabled
-        && !app.engine.has_address_bar_layout();
-    if missing {
-        app.error = NO_ADDRESS_BAR_LAYOUT.into();
-    } else if app.error == NO_ADDRESS_BAR_LAYOUT {
-        app.error.clear();
-    }
-}
-
 fn update_tray() {
     APP.with(|slot| {
         let borrow = slot.borrow();
@@ -98,7 +73,6 @@ fn update_tray() {
             native::native_update(
                 cstring(&context).as_ptr(),
                 engine.paused as i32,
-                engine.state.browser_address_bar_enabled as i32,
                 cstring(&app.error).as_ptr(),
                 cstring(&layouts).as_ptr(),
             );
@@ -199,9 +173,6 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, ad
             Ok(layouts) => APP.with(|s| {
                 if let Some(app) = s.borrow_mut().as_mut() {
                     app.layouts = layouts;
-                    let selected = browser_address_bar_layout(&app.engine.config, &app.layouts);
-                    app.engine.set_address_bar_layout(selected);
-                    refresh_address_bar_error(app);
                 }
             }),
             Err(e) => event("error", &e, ""),
@@ -229,12 +200,6 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, ad
                 engine.restore_address_bar_layout()
             }
             "pause" => engine.toggle_pause(),
-            "address-toggle" => {
-                engine.toggle_browser_address_bar();
-                refresh_address_bar_error(app);
-                save = true;
-                None
-            }
             "default" => {
                 if app.layouts.iter().any(|l| l.id == first) {
                     save = true;

@@ -17,12 +17,6 @@ pub struct State {
     pub entries: BTreeMap<String, Entry>,
     #[serde(default)]
     pub default_layout: Option<String>,
-    #[serde(default = "enabled_by_default")]
-    pub browser_address_bar_enabled: bool,
-}
-
-fn enabled_by_default() -> bool {
-    true
 }
 
 impl Default for State {
@@ -31,7 +25,6 @@ impl Default for State {
             version: 1,
             entries: BTreeMap::new(),
             default_layout: None,
-            browser_address_bar_enabled: true,
         }
     }
 }
@@ -54,13 +47,11 @@ pub struct Engine {
     pub dirty: bool,
     pending: Option<String>,
     address_bar_previous_layout: Option<String>,
-    address_bar_layout: Option<String>,
     clock: u64,
 }
 
 impl Engine {
     pub fn new(config: Config, mut state: State) -> Self {
-        let address_bar_layout = config.browser_address_bar_layout.clone();
         // Rebase persisted counters, including malicious/overflowing values.
         let mut order: Vec<_> = state
             .entries
@@ -81,7 +72,6 @@ impl Engine {
             dirty: false,
             pending: None,
             address_bar_previous_layout: None,
-            address_bar_layout,
             clock,
         };
         engine.prune();
@@ -122,8 +112,7 @@ impl Engine {
             app.to_owned()
         };
         let address_bar = address_bar
-            && self.state.browser_address_bar_enabled
-            && self.address_bar_layout.is_some()
+            && self.config.browser_address_bar_layout.is_some()
             && self
                 .config
                 .browser_address_bar_apps
@@ -162,7 +151,7 @@ impl Engine {
             return if self.paused {
                 None
             } else {
-                self.request(self.address_bar_layout.clone())
+                self.request(self.config.browser_address_bar_layout.clone())
             };
         }
         self.clock += 1;
@@ -238,20 +227,7 @@ impl Engine {
         if self.paused || !self.active.as_ref().is_some_and(|c| c.address_bar) {
             return None;
         }
-        self.request(self.address_bar_layout.clone())
-    }
-
-    pub fn set_address_bar_layout(&mut self, layout: Option<String>) {
-        self.address_bar_layout = layout;
-    }
-
-    pub fn has_address_bar_layout(&self) -> bool {
-        self.address_bar_layout.is_some()
-    }
-
-    pub fn toggle_browser_address_bar(&mut self) {
-        self.state.browser_address_bar_enabled = !self.state.browser_address_bar_enabled;
-        self.dirty = true;
+        self.request(self.config.browser_address_bar_layout.clone())
     }
 
     fn remember(&mut self, key: String, layout: &str) {
@@ -369,7 +345,7 @@ mod tests {
     #[test]
     fn browser_address_bar_uses_temporary_layout_without_learning() {
         let mut e = engine();
-        e.set_address_bar_layout(Some("en".into()));
+        e.config.browser_address_bar_layout = Some("en".into());
         e.focus("com.google.Chrome", "example");
         e.layout_changed("ua");
         let learned = e.state.entries.clone();
@@ -391,7 +367,7 @@ mod tests {
     #[test]
     fn address_bar_restores_prior_layout_for_unknown_context() {
         let mut e = engine();
-        e.set_address_bar_layout(Some("en".into()));
+        e.config.browser_address_bar_layout = Some("en".into());
         e.config.title_tracking_apps.push("com.apple.Safari".into());
         e.focus("com.apple.Safari", "new tab");
         e.current_layout = "ua".into();
@@ -420,59 +396,16 @@ mod tests {
     #[test]
     fn address_bar_setting_is_limited_to_configured_browsers() {
         let mut e = engine();
-        e.set_address_bar_layout(Some("en".into()));
+        e.config.browser_address_bar_layout = Some("en".into());
         e.config.browser_address_bar_apps = vec!["com.google.Chrome".into()];
         assert_eq!(e.focus_context("com.apple.Safari", "tab", "", true), None);
         assert!(!e.active.as_ref().unwrap().address_bar);
     }
 
     #[test]
-    fn address_bar_toggle_persists_and_old_state_defaults_to_enabled() {
-        let old = r#"{"version":1,"entries":{},"default_layout":null}"#;
-        let state: State = serde_json::from_str(old).unwrap();
-        assert!(state.browser_address_bar_enabled);
-        let mut e = Engine::new(Config::default(), state);
-        e.set_address_bar_layout(Some("en".into()));
-        e.toggle_browser_address_bar();
-        assert!(e.dirty);
-        assert!(!e.state.browser_address_bar_enabled);
-        assert_eq!(e.focus_context("com.google.Chrome", "tab", "", true), None);
-        assert!(!e.active.as_ref().unwrap().address_bar);
-        let saved = serde_json::to_string(&e.state).unwrap();
-        assert!(
-            !serde_json::from_str::<State>(&saved)
-                .unwrap()
-                .browser_address_bar_enabled
-        );
-        e.toggle_browser_address_bar();
-        assert_eq!(
-            e.focus_context("com.google.Chrome", "tab", "", true),
-            Some("en".into())
-        );
-    }
-
-    #[test]
-    fn disabling_address_bar_while_focused_restores_prior_layout() {
-        let mut e = engine();
-        e.set_address_bar_layout(Some("en".into()));
-        e.focus("com.apple.Safari", "new tab");
-        e.current_layout = "ua".into();
-        let desired = e.focus_context("com.apple.Safari", "new tab", "", true);
-        assert_eq!(desired, Some("en".into()));
-        e.selected("en", true);
-        e.toggle_browser_address_bar();
-        // macOS re-reads the focused element after the toggle.
-        assert_eq!(
-            e.focus_context("com.apple.Safari", "new tab", "", true),
-            Some("ua".into())
-        );
-        assert!(!e.active.as_ref().unwrap().address_bar);
-    }
-
-    #[test]
     fn pausing_in_address_bar_keeps_prior_layout_for_exit() {
         let mut e = engine();
-        e.set_address_bar_layout(Some("en".into()));
+        e.config.browser_address_bar_layout = Some("en".into());
         e.focus("com.apple.Safari", "new tab");
         e.current_layout = "ua".into();
         assert_eq!(
