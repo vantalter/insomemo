@@ -288,7 +288,10 @@ impl Backend {
     }
 
     pub fn snapshot(&mut self) -> Result<Vec<Event>, String> {
-        Ok(vec![self.current_layout()?, self.context()?])
+        Ok(vec![
+            reported(self.current_layout()),
+            reported(self.context()),
+        ])
     }
 
     pub fn events(&mut self) -> Result<Vec<Event>, String> {
@@ -355,7 +358,8 @@ impl Backend {
         }
         // Query current state instead of replaying stale notification payloads.
         if focus {
-            events.push(self.context()?);
+            // A slow command socket is not fatal; only the event stream is.
+            events.push(reported(self.context()));
         }
         if input {
             // Resolve after the focus event has actually restored its layout.
@@ -363,6 +367,11 @@ impl Backend {
         }
         Ok(events)
     }
+}
+
+/// Turns a failed compositor query into a tray error instead of a fatal one.
+fn reported(result: Result<Event, String>) -> Event {
+    result.unwrap_or_else(|e| ("error".into(), e, String::new()))
 }
 
 #[cfg(target_os = "linux")]
@@ -462,5 +471,22 @@ mod tests {
         assert!(backend.events().unwrap().is_empty());
         writer.write_all(b"ian\n").unwrap();
         assert_eq!(backend.events().unwrap()[0].0, "refresh-layout");
+    }
+
+    #[test]
+    fn failed_context_query_is_reported_not_fatal() {
+        let (reader, mut writer) = UnixStream::pair().unwrap();
+        reader.set_nonblocking(true).unwrap();
+        let mut backend = Backend {
+            protocol: Protocol::Hyprland,
+            commands: PathBuf::from("/nonexistent/insomemo.sock"),
+            stream: reader,
+            buffer: Vec::new(),
+            keyboard: None,
+        };
+        writer.write_all(b"activewindow>>kitty,shell\n").unwrap();
+        let events = backend.events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "error");
     }
 }
