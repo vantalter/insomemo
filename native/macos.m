@@ -24,6 +24,46 @@ static NSString *shortcode(TISInputSourceRef source) {
     return [code isEqualToString:@"UK"] ? @"UA" : code;
 }
 
+static BOOL focusedBrowserToolbarField(AXUIElementRef app) {
+    AXUIElementRef element = NULL;
+    if (AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute,
+                                      (CFTypeRef *)&element) != kAXErrorSuccess || !element)
+        return NO;
+    CFTypeRef role = NULL;
+    BOOL textField = NO;
+    if (AXUIElementCopyAttributeValue(element, kAXRoleAttribute, &role) == kAXErrorSuccess && role) {
+        textField = CFEqual(role, kAXTextFieldRole) || CFEqual(role, kAXComboBoxRole) ||
+                    CFEqual(role, kAXTextAreaRole);
+        CFRelease(role);
+    }
+    if (!textField) {
+        CFRelease(element);
+        return NO;
+    }
+    // Browser chrome lives in a toolbar; page text fields live under AXWebArea.
+    for (NSUInteger depth = 0; depth < 12; depth++) {
+        role = NULL;
+        if (AXUIElementCopyAttributeValue(element, kAXRoleAttribute, &role) == kAXErrorSuccess &&
+            role) {
+            BOOL toolbar = CFEqual(role, kAXToolbarRole);
+            BOOL webArea = CFEqual(role, CFSTR("AXWebArea"));
+            CFRelease(role);
+            if (toolbar || webArea) {
+                CFRelease(element);
+                return toolbar;
+            }
+        }
+        AXUIElementRef parent = NULL;
+        if (AXUIElementCopyAttributeValue(element, kAXParentAttribute,
+                                          (CFTypeRef *)&parent) != kAXErrorSuccess || !parent)
+            break;
+        CFRelease(element);
+        element = parent;
+    }
+    CFRelease(element);
+    return NO;
+}
+
 static NSArray *layoutList(void) {
     NSDictionary *filter = @{
         (__bridge NSString *)kTISPropertyInputSourceIsSelectCapable : @YES,
@@ -208,6 +248,10 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     NSString *windowID = @"";
     NSString *identifier = self.activeApp.bundleIdentifier ?: self.activeApp.executableURL.path ?: self.activeApp.localizedName;
     BOOL ghostty = [identifier isEqualToString:@"com.mitchellh.ghostty"];
+    BOOL browser = [identifier isEqualToString:@"com.google.Chrome"] ||
+                   [identifier isEqualToString:@"com.apple.Safari"] ||
+                   [identifier isEqualToString:@"org.mozilla.firefox"];
+    BOOL addressBar = browser && self.observedApp && focusedBrowserToolbarField(self.observedApp);
     if (self.observedApp) {
         AXUIElementRef window = NULL;
         // AppKit native tabs are separate AX windows. The selected tab can
@@ -246,7 +290,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                                        (unsigned long)CFHash(self.observedWindow)];
         }
     }
-    switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String);
+    switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String, addressBar);
 }
 - (void)layoutChanged:(NSNotification *)notification {
     TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();

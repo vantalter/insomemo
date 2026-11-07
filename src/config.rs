@@ -8,6 +8,10 @@ pub struct Config {
     /// Exact suffixes removed before hashing; no fuzzy matching of conversations.
     pub title_suffixes: Vec<String>,
     pub default_layout: Option<String>,
+    /// macOS only: input source selected while a browser address field has focus.
+    pub browser_address_bar_layout: Option<String>,
+    /// Subset of supported macOS browser bundle IDs eligible for the override.
+    pub browser_address_bar_apps: Vec<String>,
     /// Wayland keyboard identifier/name. None selects the first/main keyboard.
     pub keyboard: Option<String>,
 }
@@ -39,6 +43,15 @@ impl Default for Config {
             .collect(),
             title_suffixes: Vec::new(),
             default_layout: None,
+            browser_address_bar_layout: None,
+            browser_address_bar_apps: [
+                "com.google.Chrome",
+                "com.apple.Safari",
+                "org.mozilla.firefox",
+            ]
+            .iter()
+            .map(|s| (*s).into())
+            .collect(),
             keyboard: None,
         }
     }

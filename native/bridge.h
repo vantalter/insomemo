@@ -4,7 +4,7 @@
 /* All callbacks and native calls run on the OS main-loop thread. Strings are
  * borrowed for the duration of the call, except native_layouts (caller frees). */
 void switcher_event(const char *kind, const char *first, const char *second);
-void switcher_context(const char *app, const char *title, const char *window_id);
+void switcher_context(const char *app, const char *title, const char *window_id, int address_bar);
 int native_run(int event_fd);
 int native_set_layout(const char *id);
 char *native_layouts(void);
