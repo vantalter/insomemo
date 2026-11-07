@@ -362,7 +362,12 @@ fn run() -> Result<(), String> {
     });
     let status = unsafe { native::native_run(fd) };
     flush();
-    let save_failed = APP.with(|slot| slot.borrow().as_ref().is_some_and(|app| app.save_failed));
+    let save_error = APP.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .filter(|app| app.save_failed)
+            .map(|app| app.error.clone())
+    });
     if status != 0 {
         return Err(format!("Platform backend stopped with status {status}"));
     }
@@ -373,15 +378,29 @@ fn run() -> Result<(), String> {
     }) {
         return Err(error);
     }
-    if save_failed {
-        return Err("State could not be saved; see error above".into());
+    if let Some(error) = save_error {
+        return Err(format!("State could not be saved: {error}"));
     }
     Ok(())
+}
+
+/// A Finder launch has no visible stderr, so the bundled app reports failures
+/// in an alert. Terminal runs, including the bundle's binary, only print.
+#[cfg(target_os = "macos")]
+fn alert(error: &str) {
+    use std::io::IsTerminal;
+    let bundled = std::env::current_exe()
+        .is_ok_and(|path| path.to_string_lossy().contains(".app/Contents/MacOS/"));
+    if bundled && !std::io::stderr().is_terminal() {
+        unsafe { native::native_alert(cstring(error).as_ptr()) }
+    }
 }
 
 fn main() {
     if let Err(error) = run() {
         eprintln!("insomemo: {error}");
+        #[cfg(target_os = "macos")]
+        alert(&error);
         std::process::exit(1);
     }
 }

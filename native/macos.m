@@ -392,6 +392,19 @@ void native_stop(void) {
                                            data2:0]
              atStart:NO];
 }
+void native_alert(const char *message) {
+    @autoreleasepool {
+        [NSApplication sharedApplication];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        [NSApp activateIgnoringOtherApps:YES];
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.alertStyle = NSAlertStyleCritical;
+        alert.messageText = @"Insomemo stopped";
+        alert.informativeText = @(message);
+        [alert addButtonWithTitle:@"Quit"];
+        [alert runModal];
+    }
+}
 void native_hash(const char *text, char *output) {
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(text, (CC_LONG)strlen(text), digest);

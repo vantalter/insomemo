@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Package the built binary at a stable path for macOS Accessibility grants."""
+"""Package the built binary at a stable path for macOS Accessibility grants.
+
+Usage: bundle-macos.py [BINARY]  (default: target/release/insomemo)
+"""
 import pathlib
 import plistlib
+import re
 import shutil
 import struct
 import subprocess
@@ -11,11 +15,14 @@ import tempfile
 if sys.platform != "darwin":
     raise SystemExit("App bundles can only be created on macOS")
 root = pathlib.Path(__file__).resolve().parent.parent
+binary = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else root / "target/release/insomemo"
+manifest = (root / "Cargo.toml").read_text()
+version = re.search(r'^version = "([^"]+)"', manifest, re.MULTILINE).group(1)
 bundle = root / "dist" / "Insomemo.app"
 contents = bundle / "Contents"
 (contents / "MacOS").mkdir(parents=True, exist_ok=True)
 (contents / "Resources").mkdir(parents=True, exist_ok=True)
-shutil.copy2(root / "target/release/insomemo", contents / "MacOS/insomemo")
+shutil.copy2(binary, contents / "MacOS/insomemo")
 with tempfile.TemporaryDirectory(prefix="insomemo-icons-") as directory:
     iconset = pathlib.Path(directory) / "AppIcon.iconset"
     iconset.mkdir()
@@ -54,7 +61,7 @@ with (contents / "Info.plist").open("wb") as output:
         "CFBundleIconFile": "AppIcon",
         "LSApplicationCategoryType": "public.app-category.utilities",
         "CFBundlePackageType": "APPL",
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleShortVersionString": version,
         "CFBundleVersion": "1",
         "LSMinimumSystemVersion": "12.0",
         "LSUIElement": True,
