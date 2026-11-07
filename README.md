@@ -35,6 +35,10 @@ If you only need fixed per-app or per-website rules on macOS, a rule-based switc
 
 Context depends on what an app exposes: most apps must reflect tab or conversation changes in their window title. Ghostty on macOS is tracked by window identity instead.
 
+## Install
+
+Download the latest build from [Releases](https://github.com/vantalter/insomemo/releases): a universal macOS app (Apple Silicon and Intel) and Linux binaries for x86_64 and arm64 (glibc 2.35+). The release notes cover first-launch steps; the sections below build from source.
+
 ## Build and run on Linux
 
 Development dependencies on Debian/Ubuntu:
@@ -133,6 +137,10 @@ Manual desktop acceptance checks:
 - Use Force Default Layout and Clear Cache; restart and verify persistence.
 - Remove a saved OS layout; verify that failed restoration is visible in the tray and manual switching still works.
 - Measure idle RSS and CPU after startup and during focus/title/layout changes on each target desktop.
+
+## Releasing
+
+Set `version` in `Cargo.toml`, merge to `main`, then push a matching tag, for example `git tag v0.1.0 && git push origin v0.1.0`. The release workflow checks that the tag matches, tests and builds every platform, and publishes a GitHub release with checksums. Versions below 1.0 are published as pre-releases.
 
 ## Optional startup
 
