@@ -3,6 +3,7 @@ fn main() {
     let target = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
     let mut build = cc::Build::new();
     build.include("native").warnings(true);
+    let mut libraries = Vec::new();
     match target.as_str() {
         "macos" => {
             let icon_path = "assets/TrayTemplate.png";
@@ -25,15 +26,27 @@ fn main() {
         "linux" => {
             for package in ["gio-unix-2.0", "x11", "json-glib-1.0", "xkbcommon"] {
                 let lib = pkg_config::Config::new()
+                    .cargo_metadata(false)
                     .probe(package)
                     .unwrap_or_else(|e| panic!("Missing {package} development files: {e}"));
-                for path in lib.include_paths {
+                for path in &lib.include_paths {
                     build.include(path);
                 }
+                libraries.push(lib);
             }
             build.file("native/linux.c").flag("-std=c11");
         }
         _ => panic!("insomemo supports macOS and Linux"),
     }
     build.compile("insomemo_native");
+    // GNU ld resolves left to right: system libraries must follow the static
+    // native library that references them.
+    for lib in libraries {
+        for path in lib.link_paths {
+            println!("cargo:rustc-link-search=native={}", path.display());
+        }
+        for name in lib.libs {
+            println!("cargo:rustc-link-lib={name}");
+        }
+    }
 }
