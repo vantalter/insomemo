@@ -13,6 +13,8 @@ void native_free(char *value);
 void native_update(const char *context, int paused, const char *error, const char *layouts_json,
                    const char *menu_json);
 void native_schedule_save(void);
+/* Badge the tray icon briefly; repeated calls extend one badge, not restart it. */
+void native_indicate_switch(void);
 void native_stop(void);
 void native_hash(const char *text, char *output);
 void native_alert(const char *message); /* macOS only; blocks until dismissed */

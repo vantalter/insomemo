@@ -21,6 +21,7 @@ unsafe extern "C" {
         menu_json: *const c_char,
     );
     pub fn native_schedule_save();
+    pub fn native_indicate_switch();
     pub fn native_stop();
     fn native_hash(text: *const c_char, output: *mut c_char);
     #[cfg(target_os = "macos")]
