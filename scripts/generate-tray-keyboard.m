@@ -58,10 +58,10 @@ int main(int argc, const char *argv[]) {
         CGContextSetBlendMode(context, kCGBlendModeClear);
         // Key holes and spacebar are transparent, as required for a template.
         for (NSInteger index = 0; index < 4; index++)
-            roundedRect(context, 16 + index * 9, 35, 5, 5, 1.8);
+            roundedRect(context, 15.5 + index * 9, 34.5, 6, 6, 2.2);
         for (NSInteger index = 0; index < 5; index++)
-            roundedRect(context, 12 + index * 9, 45, 5, 5, 1.8);
-        roundedRect(context, 20, 55, 24, 4.5, 2.25);
+            roundedRect(context, 11.5 + index * 9, 44.5, 6, 6, 2.2);
+        roundedRect(context, 20, 54.5, 24, 5.5, 2.75);
 
         [NSGraphicsContext restoreGraphicsState];
         NSData *png = [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
