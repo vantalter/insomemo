@@ -19,7 +19,12 @@ fn main() {
             build.include(out);
             build.flag("-mmacosx-version-min=12.0");
             build.file("native/macos.m").flag("-fobjc-arc");
-            for framework in ["AppKit", "ApplicationServices", "Carbon"] {
+            for framework in [
+                "AppKit",
+                "ApplicationServices",
+                "Carbon",
+                "ServiceManagement",
+            ] {
                 println!("cargo:rustc-link-lib=framework={framework}");
             }
         }

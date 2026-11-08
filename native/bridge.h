@@ -15,6 +15,9 @@ void native_update(const char *context, int paused, const char *error, const cha
 void native_schedule_save(void);
 /* Badge the tray icon briefly; repeated calls extend one badge, not restart it. */
 void native_indicate_switch(void);
+/* macOS: -1 queries, 0 disables, 1 enables Launch at Login. Returns -1 when
+ * unsupported, 0 off, 1 on, 2 awaiting approval in System Settings. */
+int native_login_item(int action);
 void native_stop(void);
 void native_hash(const char *text, char *output);
 void native_alert(const char *message); /* macOS only; blocks until dismissed */

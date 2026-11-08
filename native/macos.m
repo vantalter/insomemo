@@ -4,6 +4,7 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
 #import <CommonCrypto/CommonDigest.h>
+#import <ServiceManagement/ServiceManagement.h>
 #include <signal.h>
 
 static void emit(NSString *kind, NSString *first, NSString *second) {
@@ -147,6 +148,7 @@ static NSArray *layoutList(void) {
 @property NSMenuItem *removePinsItem;
 @property NSString *menuJSON;
 @property NSMenuItem *indicatorItem;
+@property NSMenuItem *loginItem;
 @property NSImage *trayImage;
 @property NSImage *badgeImage;
 @property NSTimer *badgeTimer;
@@ -233,6 +235,11 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                          action:@selector(toggleIndicator:)
                                   keyEquivalent:@""];
     self.indicatorItem.target = self;
+    self.loginItem = [menu addItemWithTitle:@"Launch at Login"
+                                     action:@selector(toggleLogin:)
+                              keyEquivalent:@""];
+    self.loginItem.target = self;
+    self.loginItem.hidden = YES;
     NSMenuItem *permission = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
                                              action:@selector(permission:)
                                       keyEquivalent:@""];
@@ -393,6 +400,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 - (void)forget:(NSMenuItem *)sender {
     emit(@"forget", sender.representedObject, @"");
 }
+- (void)toggleLogin:(id)sender {
+    emit(@"login-toggle", @"", @"");
+}
 - (void)toggleIndicator:(id)sender {
     emit(@"indicator-toggle", @"", @"");
 }
@@ -497,6 +507,13 @@ static void updateScopeMenus(NSString *json) {
         pins ? [NSString stringWithFormat:@"Remove All Pins (%lu)", (unsigned long)pins]
              : @"Remove All Pins";
     delegate.removePinsItem.enabled = pins > 0;
+    NSString *login = menu[@"login"];
+    delegate.loginItem.hidden = !login || [login isEqualToString:@"unsupported"];
+    delegate.loginItem.state =
+        [login isEqualToString:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
+    delegate.loginItem.title = [login isEqualToString:@"approval"]
+                                   ? @"Launch at Login (Approve in System Settings…)"
+                                   : @"Launch at Login";
     BOOL indicator = [menu[@"indicator"] boolValue];
     delegate.indicatorItem.state = indicator ? NSControlStateValueOn : NSControlStateValueOff;
     if (!indicator && delegate.badgeTimer) {
@@ -538,6 +555,34 @@ void native_update(const char *context, int paused, const char *error, const cha
         delegate.menuJSON = menu;
         updateScopeMenus(menu);
     }
+}
+int native_login_item(int action) {
+    if (@available(macOS 13.0, *)) {
+        // SMAppService registers the running bundle; a bare binary has none.
+        if (![NSBundle.mainBundle.bundlePath hasSuffix:@".app"])
+            return -1;
+        SMAppService *service = SMAppService.mainAppService;
+        NSError *error = nil;
+        if (action == 1 && service.status != SMAppServiceStatusEnabled &&
+            service.status != SMAppServiceStatusRequiresApproval &&
+            ![service registerAndReturnError:&error])
+            NSLog(@"insomemo: cannot enable Launch at Login: %@", error);
+        else if (action == 0 && service.status != SMAppServiceStatusNotRegistered &&
+                 ![service unregisterAndReturnError:&error])
+            NSLog(@"insomemo: cannot disable Launch at Login: %@", error);
+        // Registration may need the user's approval; take them straight there.
+        if (action == 1 && service.status == SMAppServiceStatusRequiresApproval)
+            [SMAppService openSystemSettingsLoginItems];
+        switch (service.status) {
+        case SMAppServiceStatusEnabled:
+            return 1;
+        case SMAppServiceStatusRequiresApproval:
+            return 2;
+        default:
+            return 0;
+        }
+    }
+    return -1;
 }
 void native_indicate_switch(void) {
     if (!delegate.status)
