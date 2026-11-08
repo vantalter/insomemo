@@ -38,6 +38,9 @@ pub struct Context {
     pub window_id: String,
     /// Window identities do not survive an app restart, so they are not persisted.
     pub session: bool,
+    /// Browser host; its context is the fallback between a page and the app.
+    pub site: String,
+    pub site_key: Option<String>,
 }
 
 pub struct Engine {
@@ -86,7 +89,18 @@ impl Engine {
         self.focus_window(app, title, "")
     }
 
+    #[cfg(test)]
     pub fn focus_window(&mut self, app: &str, title: &str, window_id: &str) -> Option<String> {
+        self.focus_site(app, title, window_id, "")
+    }
+
+    pub fn focus_site(
+        &mut self,
+        app: &str,
+        title: &str,
+        window_id: &str,
+        site: &str,
+    ) -> Option<String> {
         if app.is_empty() {
             self.active = None;
             self.pending = None;
@@ -105,6 +119,12 @@ impl Engine {
         } else {
             app.to_owned()
         };
+        let site_key = (track && !site.is_empty()).then(|| {
+            format!(
+                "{app}:{}",
+                crate::native::title_hash(&format!("site:{site}"))
+            )
+        });
         let unchanged = self.active.as_ref().is_some_and(|c| c.key == key);
         self.active = Some(Context {
             app: app.into(),
@@ -112,6 +132,8 @@ impl Engine {
             key: key.clone(),
             window_id: window_id.into(),
             session,
+            site: site.into(),
+            site_key: site_key.clone(),
         });
         if unchanged {
             return None;
@@ -131,6 +153,12 @@ impl Engine {
             })
         };
         let desired = exact
+            .or_else(|| {
+                let entry = self.state.entries.get_mut(site_key.as_ref()?)?;
+                self.dirty = true;
+                entry.used = self.clock;
+                Some(entry.layout.clone())
+            })
             .or_else(|| {
                 self.state.entries.get_mut(app).map(|e| {
                     self.dirty = true;
@@ -182,6 +210,10 @@ impl Engine {
         if !self.state.entries.contains_key(&context.app) {
             self.remember(context.app, layout, false);
         }
+        // A site follows its latest choice, so new pages on it start there.
+        if let Some(site_key) = context.site_key {
+            self.remember(site_key, layout, false);
+        }
         self.remember(context.key, layout, context.session);
         true
     }
@@ -214,7 +246,12 @@ impl Engine {
         if !self.paused
             && let Some(context) = self.active.take()
         {
-            return self.focus_window(&context.app, &context.title, &context.window_id);
+            return self.focus_site(
+                &context.app,
+                &context.title,
+                &context.window_id,
+                &context.site,
+            );
         }
         None
     }
@@ -224,6 +261,9 @@ impl Engine {
         // Explicit override for the current context and its application's default.
         if let Some(context) = self.active.clone() {
             self.remember(context.app, layout, false);
+            if let Some(site_key) = context.site_key {
+                self.remember(site_key, layout, false);
+            }
             self.remember(context.key, layout, context.session);
         }
         self.dirty = true;
@@ -415,5 +455,28 @@ mod tests {
         let newer = r#"{"version":1,"entries":{},"default_layout":"ua","future_flag":true}"#;
         let state: State = serde_json::from_str(newer).unwrap();
         assert_eq!(state.default_layout.as_deref(), Some("ua"));
+    }
+
+    #[test]
+    fn new_pages_on_a_site_use_its_latest_layout() {
+        let mut e = engine();
+        e.config.title_tracking_apps.push("browser".into());
+        e.focus_site("browser", "Search", "", "google.com");
+        assert!(e.layout_changed("ua"));
+        e.focus_site("browser", "News", "", "bbc.co.uk");
+        assert!(e.layout_changed("de"));
+        // An unseen page uses its site's latest choice, not the app fallback (ua).
+        assert_eq!(e.focus_site("browser", "Weather", "", "bbc.co.uk"), None);
+        assert_eq!(
+            e.focus_site("browser", "Docs", "", "google.com"),
+            Some("ua".into())
+        );
+        e.selected("ua", true);
+        // A page's own choice still wins over its site's latest choice.
+        assert!(e.layout_changed("en"));
+        assert_eq!(
+            e.focus_site("browser", "Search", "", "google.com"),
+            Some("ua".into())
+        );
     }
 }

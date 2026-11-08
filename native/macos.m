@@ -24,6 +24,62 @@ static NSString *shortcode(TISInputSourceRef source) {
     return [code isEqualToString:@"UK"] ? @"UA" : code;
 }
 
+// Host of an http(s) page without "www.", or nil for other documents.
+static NSString *pageHost(id value) {
+    NSURL *url = [value isKindOfClass:NSURL.class]      ? value
+                 : [value isKindOfClass:NSString.class] ? [NSURL URLWithString:value]
+                                                        : nil;
+    NSString *scheme = url.scheme.lowercaseString;
+    if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"])
+        return nil;
+    NSString *host = url.host.lowercaseString;
+    if ([host hasPrefix:@"www."])
+        host = [host substringFromIndex:4];
+    return host.length ? host : nil;
+}
+
+// Breadth-first, without descending into page content: Safari's web area is
+// about 50 elements from the window.
+static NSString *webAreaHost(AXUIElementRef window) {
+    NSMutableArray *queue = [NSMutableArray arrayWithObject:(__bridge id)window];
+    for (NSUInteger visited = 0; queue.count && visited < 300; visited++) {
+        id element = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        AXUIElementRef ax = (__bridge AXUIElementRef)element;
+        CFTypeRef role = NULL;
+        BOOL webArea = AXUIElementCopyAttributeValue(ax, kAXRoleAttribute, &role) ==
+                           kAXErrorSuccess &&
+                       role && CFEqual(role, CFSTR("AXWebArea"));
+        if (role)
+            CFRelease(role);
+        if (webArea) {
+            CFTypeRef url = NULL;
+            if (AXUIElementCopyAttributeValue(ax, kAXURLAttribute, &url) != kAXErrorSuccess)
+                return nil;
+            return pageHost(CFBridgingRelease(url));
+        }
+        CFTypeRef children = NULL;
+        if (AXUIElementCopyAttributeValue(ax, kAXChildrenAttribute, &children) ==
+                kAXErrorSuccess &&
+            children)
+            [queue addObjectsFromArray:CFBridgingRelease(children)];
+    }
+    return nil;
+}
+
+static NSString *windowSite(AXUIElementRef window, BOOL safari) {
+    // Chromium browsers and Electron apps publish the page URL on the window.
+    CFTypeRef document = NULL;
+    NSString *host = nil;
+    if (AXUIElementCopyAttributeValue(window, kAXDocumentAttribute, &document) ==
+            kAXErrorSuccess &&
+        document)
+        host = pageHost(CFBridgingRelease(document));
+    if (!host && safari)
+        host = webAreaHost(window);
+    return host ?: @"";
+}
+
 static NSArray *layoutList(void) {
     NSDictionary *filter = @{
         (__bridge NSString *)kTISPropertyInputSourceIsSelectCapable : @YES,
@@ -214,8 +270,11 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
         return;
     NSString *title = @"";
     NSString *windowID = @"";
+    NSString *site = @"";
     NSString *identifier = self.activeApp.bundleIdentifier ?: self.activeApp.executableURL.path ?: self.activeApp.localizedName;
     BOOL ghostty = [identifier isEqualToString:@"com.mitchellh.ghostty"];
+    BOOL safari = [identifier isEqualToString:@"com.apple.Safari"] ||
+                  [identifier isEqualToString:@"com.apple.SafariTechnologyPreview"];
     if (self.observedApp) {
         AXUIElementRef window = NULL;
         // AppKit native tabs are separate AX windows. The selected tab can
@@ -252,9 +311,12 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
             if (ghostty)
                 windowID = [NSString stringWithFormat:@"%d:%lu", self.activeApp.processIdentifier,
                                                        (unsigned long)CFHash(self.observedWindow)];
+            else
+                site = windowSite(self.observedWindow, safari);
         }
     }
-    switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String);
+    switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String,
+                     site.UTF8String);
 }
 - (void)layoutChanged:(NSNotification *)notification {
     TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();
