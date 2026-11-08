@@ -11,9 +11,9 @@ Insomemo remembers your keyboard layout per window, tab, and conversation on Lin
 
 ## Install
 
-**macOS:** unzip and move `Insomemo.app` to `/Applications`. The app is not notarized, so the first launch is blocked by Gatekeeper: right-click the app and choose **Open**, or run `xattr -d com.apple.quarantine /Applications/Insomemo.app`. Then choose **Enable Window / Tab Tracking…** in its menu and grant Accessibility access.
+**macOS:** unzip and move `Insomemo.app` to `/Applications`. The app is not notarized, so the first launch is blocked by Gatekeeper: right-click the app and choose **Open**, or run `xattr -d com.apple.quarantine /Applications/Insomemo.app`. Then choose **Enable Window / Tab Tracking…** in its menu and grant Accessibility access. To start Insomemo automatically, choose **Launch at Login** after the app is in `/Applications`; the login item points at the app's current location.
 
-**Linux:** needs GLib, json-glib, libX11, and libxkbcommon (installed on most desktops) and a StatusNotifier tray host. Copy `insomemo` to `~/.local/bin`, then enable the included systemd user service or desktop entry. Build from source on systems older than glibc 2.35.
+**Linux:** needs GLib, json-glib, libX11, and libxkbcommon (installed on most desktops) and a StatusNotifier tray host. Copy `insomemo` to `~/.local/bin`, then choose **Launch at Login** in its tray menu, or use the included systemd user service on Sway and Hyprland. Build from source on systems older than glibc 2.35.
 
 ## Privacy
 
