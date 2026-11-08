@@ -11,7 +11,8 @@ It is a small Rust daemon (about 400 KiB) with a native tray on both platforms. 
 - **Linux first-class.** X11, Sway, and Hyprland are supported natively through EWMH/XKB and compositor IPC, with a StatusNotifier tray for KDE, Waybar, and other hosts. Per-window layout memory on Linux usually depends on your desktop environment; Insomemo behaves the same on X11, Sway, Hyprland, and macOS.
 - **Learns per window, not just per app.** For terminals, chat apps, and browsers, each window or tab title is its own context. On macOS, browsers also learn per site, so a new page on a site you have used starts in that site's layout. Ghostty's native macOS tabs are tracked by window identity, so tabs with the same title stay separate.
 - **Zero configuration.** Change the layout once in a context and it is remembered. The first choice in an app also becomes that app's fallback for contexts it has not seen yet.
-- **Private by design.** Titles are stored only as truncated SHA-256 hashes in a user-private state file. Nothing leaves your machine, and Insomemo never reads keystrokes or page content.
+- **Rules when you want them.** Pin the current layout to a tab, a site, or a whole app from the tray, and forget any learned layout you no longer want.
+- **Private by design.** Titles and sites are stored only as truncated SHA-256 hashes in a user-private state file. Insomemo opens no network connections and never reads keystrokes or page content. You can [check this yourself](#privacy).
 
 ### Compared with alternatives
 
@@ -110,11 +111,35 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 4. App defaults and title contexts share a 200-entry LRU budget. Least recently used entries are evicted, including app fallbacks. Access order updates in memory and is persisted with the next state write.
 5. Changes save atomically after two seconds of inactivity. Quit, SIGINT, and SIGTERM flush pending changes. A corrupt/unknown-version state file is preserved and startup fails with an explanation. Unknown fields written by a newer build are ignored, so downgrading keeps your learned layouts. A file lock prevents two instances from modifying the same state directory.
 
-`state.json` contains layout IDs, app IDs, title and site hashes, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
+`state.json` contains layout IDs, app IDs, title and site hashes, pins, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
 
 **Pause Auto-Switching** freezes both switching and learning. Resuming restores the focused context. **Force Default Layout** selects a layout immediately, sets the global fallback, and updates the current context and its app fallback. **Clear Cache** removes learned contexts and the tray-selected default; it retains a default explicitly specified in config. Clear/default actions use the same debounced persistence as manual layout changes.
 
+**Always Use … In** pins the current layout to *This Tab or Window*, *This Site* (macOS browsers), or *This App*. A pin beats every learned layout: the tab pin first, then the site, then the app. Clicking a checked pin removes it. Manual changes in a pinned context are still learned, so removing the pin restores learned behaviour. **Forget Learned Layout** removes the learned layout for one of those scopes without touching pins. Pins survive **Clear Cache**; **Remove All Pins** clears them. Pins on Ghostty tabs last only for the session, like the tabs' learned layouts.
+
 Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Most apps must expose tab changes through their window title; Ghostty's native macOS tabs are tracked by accessibility window identity. Insomemo does not inspect browser content or capture keystrokes.
+
+## Privacy
+
+What Insomemo reads, in memory only:
+
+- **macOS:** the frontmost app's bundle ID, its focused window's title, and, for web pages, the page address (through Accessibility). Only the host, such as `docs.google.com`, is used, and only as a hash. It asks for Accessibility, not Input Monitoring, so macOS does not let it read keystrokes.
+- **Linux:** the active window's class and title (X11 properties or Sway/Hyprland IPC).
+
+What it stores: `state.json` (see [How memory works](#how-memory-works)) and your optional `config.json`, in a directory only you can open. Nothing else is written, and nothing is sent anywhere.
+
+Ways to check:
+
+```sh
+# No network sockets: prints nothing while Insomemo runs (macOS and Linux).
+lsof -nP -i -a -p "$(pgrep -x insomemo)"
+# Linux: only local Unix sockets (D-Bus, X11, compositor IPC).
+ss -xp | grep insomemo
+# No networking libraries among the dependencies.
+cargo tree --edges normal,build
+# Everything it remembers (~/.config/input-switcher if you upgraded from Input Switcher).
+cat ~/.config/insomemo/state.json
+```
 
 ## Performance and validation
 
@@ -127,7 +152,7 @@ make test
 make check
 ```
 
-Tests cover context restoration, fallback, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI runs `scripts/smoke-linux.py` under Xvfb and a session D-Bus to exercise the native tray and persistence.
+Tests cover context restoration, site and app fallback, pins and forgetting, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI runs `scripts/smoke-linux.py` under Xvfb and a session D-Bus to exercise the native tray and persistence.
 
 Manual desktop acceptance checks:
 

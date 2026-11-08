@@ -18,6 +18,7 @@ unsafe extern "C" {
         paused: c_int,
         error: *const c_char,
         layouts_json: *const c_char,
+        menu_json: *const c_char,
     );
     pub fn native_schedule_save();
     pub fn native_stop();
