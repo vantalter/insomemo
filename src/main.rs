@@ -6,7 +6,7 @@ mod storage;
 mod wayland;
 
 use config::Config;
-use engine::Engine;
+use engine::{Engine, Scope};
 use native::{Layout, cstring};
 use std::{
     cell::RefCell,
@@ -51,6 +51,50 @@ fn select_layout(layout: &str) -> bool {
     unsafe { native::native_set_layout(cstring(layout).as_ptr()) != 0 }
 }
 
+/// Pin/forget menu contents, labelled here so both trays read the same text.
+fn menu_json(engine: &Engine, layouts: &[Layout]) -> String {
+    let name = |id: &str| {
+        layouts
+            .iter()
+            .find(|l| l.id == id)
+            .map_or_else(|| id.to_owned(), |l| l.name.clone())
+    };
+    let context = engine.active.as_ref();
+    let scopes: Vec<_> = engine
+        .scopes()
+        .into_iter()
+        .map(|(scope, pin, learned)| {
+            let label = match scope {
+                Scope::Tab => "This Tab or Window".to_owned(),
+                Scope::Site => format!("This Site ({})", context.map_or("", |c| &c.site)),
+                Scope::App => format!("This App ({})", context.map_or("", |c| &c.app)),
+            };
+            let pin_label = match &pin {
+                Some(layout) => format!("{label}: {}", name(layout)),
+                None => label.clone(),
+            };
+            serde_json::json!({
+                "id": scope.id(),
+                "label": label,
+                "pin_label": pin_label,
+                "pinned": pin.is_some(),
+                "learned": learned,
+            })
+        })
+        .collect();
+    let current = if engine.current_layout.is_empty() {
+        "Current Layout".to_owned()
+    } else {
+        name(&engine.current_layout)
+    };
+    serde_json::json!({
+        "pin_title": format!("Always Use {current} In"),
+        "pins": engine.pin_count(),
+        "scopes": scopes,
+    })
+    .to_string()
+}
+
 fn update_tray() {
     APP.with(|slot| {
         let borrow = slot.borrow();
@@ -71,6 +115,7 @@ fn update_tray() {
             })
             .unwrap_or_else(|| "No focused application".into());
         let layouts = serde_json::to_string(&app.layouts).unwrap();
+        let menu = menu_json(engine, &app.layouts);
         let message = if app.error.is_empty() {
             &app.warning
         } else {
@@ -82,6 +127,7 @@ fn update_tray() {
                 engine.paused as i32,
                 cstring(message).as_ptr(),
                 cstring(&layouts).as_ptr(),
+                cstring(&menu).as_ptr(),
             );
         }
     });
@@ -210,6 +256,19 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
             }
             "clear" => {
                 engine.clear();
+                save = true;
+                None
+            }
+            "pin" => {
+                save = Scope::parse(first).is_some_and(|scope| engine.toggle_pin(scope));
+                None
+            }
+            "forget" => {
+                save = Scope::parse(first).is_some_and(|scope| engine.forget(scope));
+                None
+            }
+            "clear-pins" => {
+                engine.clear_pins();
                 save = true;
                 None
             }

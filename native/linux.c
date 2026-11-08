@@ -24,6 +24,8 @@ static char *tray_context, *tray_error;
 static int tray_paused;
 static JsonArray *tray_layouts;
 static char *last_layouts;
+static JsonObject *tray_menu; /* pin/forget scopes, labelled by Rust */
+static char *last_menu;
 static gboolean quit_requested;
 
 static void emit(const char *kind, const char *first, const char *second) {
@@ -372,6 +374,21 @@ static const char *xml =
 static GVariant *empty_pixmap(void) {
     return g_variant_new_array(G_VARIANT_TYPE("(iiay)"), NULL, 0);
 }
+static JsonArray *menu_scopes(void) {
+    return tray_menu && json_object_has_member(tray_menu, "scopes")
+               ? json_object_get_array_member(tray_menu, "scopes")
+               : NULL;
+}
+static guint scope_count(void) {
+    JsonArray *scopes = menu_scopes();
+    return scopes ? json_array_get_length(scopes) : 0;
+}
+static JsonObject *menu_scope(int index) {
+    return index >= 0 && (guint)index < scope_count()
+               ? json_array_get_object_element(menu_scopes(), index)
+               : NULL;
+}
+
 static GVariant *properties(int id) {
     GVariantBuilder props;
     g_variant_builder_init(&props, G_VARIANT_TYPE("a{sv}"));
@@ -403,7 +420,41 @@ static GVariant *properties(int id) {
         label = tray_error ? tray_error : "";
         enabled = FALSE;
         break;
+    case 7:
+        label = tray_menu ? json_object_get_string_member(tray_menu, "pin_title")
+                          : "Always Use Current Layout In";
+        enabled = scope_count() > 0;
+        g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
+        break;
+    case 8:
+        label = "Forget Learned Layout";
+        enabled = scope_count() > 0;
+        g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
+        break;
+    case 9: {
+        gint64 pins = tray_menu ? json_object_get_int_member(tray_menu, "pins") : 0;
+        allocated = pins ? g_strdup_printf("Remove All Pins (%" G_GINT64_FORMAT ")", pins)
+                         : g_strdup("Remove All Pins");
+        label = allocated;
+        enabled = pins > 0;
+        break;
+    }
     default:
+        if (id >= 200 && id < 300 && menu_scope(id - 200)) {
+            JsonObject *scope = menu_scope(id - 200);
+            label = json_object_get_string_member(scope, "pin_label");
+            g_variant_builder_add(&props, "{sv}", "toggle-type", g_variant_new_string("checkmark"));
+            g_variant_builder_add(
+                &props, "{sv}", "toggle-state",
+                g_variant_new_int32(json_object_get_boolean_member(scope, "pinned")));
+            break;
+        }
+        if (id >= 300 && id < 400 && menu_scope(id - 300)) {
+            JsonObject *scope = menu_scope(id - 300);
+            label = json_object_get_string_member(scope, "label");
+            enabled = json_object_get_boolean_member(scope, "learned");
+            break;
+        }
         if (id >= 100 && tray_layouts && (guint)(id - 100) < json_array_get_length(tray_layouts))
             label = json_object_get_string_member(
                 json_array_get_object_element(tray_layouts, id - 100), "name");
@@ -424,10 +475,14 @@ static GVariant *menu_node(int id, int depth) {
     if (depth != 0) {
         int next = depth > 0 ? depth - 1 : -1;
         if (id == 0) {
-            int ids[] = {1, 6, 2, 3, 4, 5};
+            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 5};
             for (size_t i = 0; i < G_N_ELEMENTS(ids); i++)
                 g_variant_builder_add(&children, "v", menu_node(ids[i], next));
         }
+        if (id == 7 || id == 8)
+            for (guint i = 0; i < scope_count(); i++)
+                g_variant_builder_add(&children, "v",
+                                      menu_node((id == 7 ? 200 : 300) + (int)i, next));
         if (id == 3 && tray_layouts)
             for (guint i = 0; i < json_array_get_length(tray_layouts); i++)
                 g_variant_builder_add(&children, "v", menu_node(100 + i, next));
@@ -444,6 +499,15 @@ static void clicked(int id, const char *event) {
         emit("clear", "", "");
     if (id == 5)
         emit("quit", "", "");
+    if (id == 9)
+        emit("clear-pins", "", "");
+    if ((id >= 200 && id < 300 && menu_scope(id - 200)) ||
+        (id >= 300 && id < 400 && menu_scope(id - 300))) {
+        JsonObject *scope = menu_scope(id % 100);
+        char *scope_id = g_strdup(json_object_get_string_member(scope, "id"));
+        emit(id < 300 ? "pin" : "forget", scope_id, "");
+        g_free(scope_id);
+    }
     if (id >= 100 && tray_layouts && (guint)(id - 100) < json_array_get_length(tray_layouts)) {
         char *layout = g_strdup(json_object_get_string_member(
             json_array_get_object_element(tray_layouts, id - 100), "id"));
@@ -611,9 +675,11 @@ static void watcher_vanished(GDBusConnection *connection, const gchar *name, gpo
             "insomemo: no StatusNotifier tray host; daemon remains active (SIGTERM to quit)\n");
 }
 
-void native_update(const char *context, int paused, const char *error, const char *layouts_json) {
+void native_update(const char *context, int paused, const char *error, const char *layouts_json,
+                   const char *menu_json) {
     gboolean changed = g_strcmp0(tray_context, context) || g_strcmp0(tray_error, error) ||
-                       tray_paused != paused || g_strcmp0(last_layouts, layouts_json);
+                       tray_paused != paused || g_strcmp0(last_layouts, layouts_json) ||
+                       g_strcmp0(last_menu, menu_json);
     if (!changed)
         return;
     g_free(tray_context);
@@ -631,6 +697,17 @@ void native_update(const char *context, int paused, const char *error, const cha
         g_object_unref(parser);
         g_free(last_layouts);
         last_layouts = g_strdup(layouts_json);
+    }
+    if (g_strcmp0(last_menu, menu_json)) {
+        JsonParser *parser = json_parser_new();
+        if (json_parser_load_from_data(parser, menu_json, -1, NULL)) {
+            if (tray_menu)
+                json_object_unref(tray_menu);
+            tray_menu = json_object_ref(json_node_get_object(json_parser_get_root(parser)));
+        }
+        g_object_unref(parser);
+        g_free(last_menu);
+        last_menu = g_strdup(menu_json);
     }
     revision++;
     if (bus) {

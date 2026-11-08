@@ -119,6 +119,10 @@ static NSArray *layoutList(void) {
 @property AXUIElementRef observedWindow;
 @property NSRunningApplication *activeApp;
 @property NSString *layoutsJSON;
+@property NSMenuItem *pinItem;
+@property NSMenuItem *forgetItem;
+@property NSMenuItem *removePinsItem;
+@property NSString *menuJSON;
 @property BOOL trusted;
 @end
 
@@ -172,6 +176,16 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                      action:@selector(pause:)
                               keyEquivalent:@""];
     self.pauseItem.target = self;
+    self.pinItem = [menu addItemWithTitle:@"Always Use Current Layout In"
+                                   action:nil
+                            keyEquivalent:@""];
+    self.pinItem.submenu = [[NSMenu alloc] initWithTitle:@"Pin"];
+    self.forgetItem = [menu addItemWithTitle:@"Forget Learned Layout"
+                                      action:nil
+                               keyEquivalent:@""];
+    self.forgetItem.submenu = [[NSMenu alloc] initWithTitle:@"Forget"];
+    self.pinItem.submenu.autoenablesItems = NO;
+    self.forgetItem.submenu.autoenablesItems = NO;
     NSMenuItem *defaults = [menu addItemWithTitle:@"Force Default Layout"
                                            action:nil
                                     keyEquivalent:@""];
@@ -181,6 +195,11 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                         action:@selector(clear:)
                                  keyEquivalent:@""];
     clear.target = self;
+    self.removePinsItem = [menu addItemWithTitle:@"Remove All Pins"
+                                          action:@selector(removePins:)
+                                   keyEquivalent:@""];
+    self.removePinsItem.target = self;
+    self.removePinsItem.enabled = NO;
     NSMenuItem *permission = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
                                              action:@selector(permission:)
                                       keyEquivalent:@""];
@@ -335,6 +354,15 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 - (void)pause:(id)sender {
     emit(@"pause", @"", @"");
 }
+- (void)pin:(NSMenuItem *)sender {
+    emit(@"pin", sender.representedObject, @"");
+}
+- (void)forget:(NSMenuItem *)sender {
+    emit(@"forget", sender.representedObject, @"");
+}
+- (void)removePins:(id)sender {
+    emit(@"clear-pins", @"", @"");
+}
 - (void)clear:(id)sender {
     emit(@"clear", @"", @"");
 }
@@ -403,7 +431,40 @@ char *native_layouts(void) {
 }
 void native_free(char *value) { free(value); }
 
-void native_update(const char *context, int paused, const char *error, const char *layouts_json) {
+static void updateScopeMenus(NSString *json) {
+    NSDictionary *menu =
+        [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding]
+                                        options:0
+                                          error:NULL];
+    NSArray *scopes = menu[@"scopes"];
+    delegate.pinItem.title = menu[@"pin_title"] ?: @"Always Use Current Layout In";
+    [delegate.pinItem.submenu removeAllItems];
+    [delegate.forgetItem.submenu removeAllItems];
+    for (NSDictionary *scope in scopes) {
+        NSMenuItem *pin = [delegate.pinItem.submenu addItemWithTitle:scope[@"pin_label"]
+                                                              action:@selector(pin:)
+                                                       keyEquivalent:@""];
+        pin.target = delegate;
+        pin.representedObject = scope[@"id"];
+        pin.state = [scope[@"pinned"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
+        NSMenuItem *forget = [delegate.forgetItem.submenu addItemWithTitle:scope[@"label"]
+                                                                    action:@selector(forget:)
+                                                             keyEquivalent:@""];
+        forget.target = delegate;
+        forget.representedObject = scope[@"id"];
+        forget.enabled = [scope[@"learned"] boolValue];
+    }
+    delegate.pinItem.enabled = scopes.count > 0;
+    delegate.forgetItem.enabled = scopes.count > 0;
+    NSUInteger pins = [menu[@"pins"] unsignedIntegerValue];
+    delegate.removePinsItem.title =
+        pins ? [NSString stringWithFormat:@"Remove All Pins (%lu)", (unsigned long)pins]
+             : @"Remove All Pins";
+    delegate.removePinsItem.enabled = pins > 0;
+}
+
+void native_update(const char *context, int paused, const char *error, const char *layouts_json,
+                   const char *menu_json) {
     if (!delegate.status)
         return;
     delegate.status.button.appearsDisabled = paused;
@@ -428,6 +489,11 @@ void native_update(const char *context, int paused, const char *error, const cha
             item.target = delegate;
             item.representedObject = layout[@"id"];
         }
+    }
+    NSString *menu = @(menu_json);
+    if (![delegate.menuJSON isEqualToString:menu]) {
+        delegate.menuJSON = menu;
+        updateScopeMenus(menu);
     }
 }
 void native_schedule_save(void) {
