@@ -18,6 +18,10 @@ pub struct State {
     pub entries: BTreeMap<String, Entry>,
     #[serde(default)]
     pub default_layout: Option<String>,
+    /// Explicit "always use this layout" rules; they beat learned layouts and
+    /// are never evicted or cleared with the cache.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pins: BTreeMap<String, String>,
 }
 
 impl Default for State {
@@ -26,7 +30,32 @@ impl Default for State {
             version: 1,
             entries: BTreeMap::new(),
             default_layout: None,
+            pins: BTreeMap::new(),
         }
+    }
+}
+
+/// How much of the focused context a pin or forget action applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    Tab,
+    Site,
+    App,
+}
+
+impl Scope {
+    pub const ALL: [Scope; 3] = [Scope::Tab, Scope::Site, Scope::App];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Scope::Tab => "tab",
+            Scope::Site => "site",
+            Scope::App => "app",
+        }
+    }
+
+    pub fn parse(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|scope| scope.id() == id)
     }
 }
 
@@ -53,6 +82,8 @@ pub struct Engine {
     pending: Option<String>,
     /// Session-only contexts keyed by window identity; bounded like `state.entries`.
     windows: BTreeMap<String, Entry>,
+    /// Pins on session-only contexts, which cannot be persisted either.
+    window_pins: BTreeMap<String, String>,
     clock: u64,
 }
 
@@ -78,6 +109,7 @@ impl Engine {
             dirty: false,
             pending: None,
             windows: BTreeMap::new(),
+            window_pins: BTreeMap::new(),
             clock,
         };
         engine.prune();
@@ -139,6 +171,23 @@ impl Engine {
             return None;
         }
         self.pending = None;
+        let session_pin = if session {
+            self.window_pins.get(&key)
+        } else {
+            None
+        };
+        let pinned = session_pin
+            .or_else(|| self.state.pins.get(&key))
+            .or_else(|| self.state.pins.get(site_key.as_ref()?))
+            .or_else(|| self.state.pins.get(app))
+            .cloned();
+        if pinned.is_some() {
+            return if self.paused {
+                None
+            } else {
+                self.request(pinned)
+            };
+        }
         self.clock += 1;
         let exact = if session {
             self.windows.get_mut(&key).map(|e| {
@@ -268,6 +317,83 @@ impl Engine {
         }
         self.dirty = true;
         self.request(Some(layout.into()))
+    }
+
+    /// The stored key for `scope` of the focused context, and whether it is session-only.
+    fn scope_key(&self, scope: Scope) -> Option<(String, bool)> {
+        let context = self.active.as_ref()?;
+        match scope {
+            Scope::Tab => {
+                (context.key != context.app).then(|| (context.key.clone(), context.session))
+            }
+            Scope::Site => context.site_key.clone().map(|key| (key, false)),
+            Scope::App => Some((context.app.clone(), false)),
+        }
+    }
+
+    /// Scopes available for the focused context, with their pin and whether
+    /// a learned layout exists to forget.
+    pub fn scopes(&self) -> Vec<(Scope, Option<String>, bool)> {
+        Scope::ALL
+            .into_iter()
+            .filter_map(|scope| {
+                let (key, session) = self.scope_key(scope)?;
+                let (pins, entries) = if session {
+                    (&self.window_pins, &self.windows)
+                } else {
+                    (&self.state.pins, &self.state.entries)
+                };
+                Some((scope, pins.get(&key).cloned(), entries.contains_key(&key)))
+            })
+            .collect()
+    }
+
+    pub fn pin_count(&self) -> usize {
+        self.state.pins.len() + self.window_pins.len()
+    }
+
+    /// Pins the current layout to `scope`, or removes an existing pin there.
+    /// Returns whether persistent state changed.
+    pub fn toggle_pin(&mut self, scope: Scope) -> bool {
+        let Some((key, session)) = self.scope_key(scope) else {
+            return false;
+        };
+        let pins = if session {
+            &mut self.window_pins
+        } else {
+            &mut self.state.pins
+        };
+        if pins.remove(&key).is_none() {
+            if self.current_layout.is_empty() {
+                return false;
+            }
+            pins.insert(key, self.current_layout.clone());
+        }
+        if !session {
+            self.dirty = true;
+        }
+        !session
+    }
+
+    /// Removes the learned layout for `scope`; pins are unaffected.
+    /// Returns whether persistent state changed.
+    pub fn forget(&mut self, scope: Scope) -> bool {
+        let Some((key, session)) = self.scope_key(scope) else {
+            return false;
+        };
+        if session {
+            self.windows.remove(&key);
+            return false;
+        }
+        let removed = self.state.entries.remove(&key).is_some();
+        self.dirty |= removed;
+        removed
+    }
+
+    pub fn clear_pins(&mut self) {
+        self.state.pins.clear();
+        self.window_pins.clear();
+        self.dirty = true;
     }
 
     pub fn clear(&mut self) {
@@ -477,6 +603,64 @@ mod tests {
         assert_eq!(
             e.focus_site("browser", "Search", "", "google.com"),
             Some("ua".into())
+        );
+    }
+
+    #[test]
+    fn pins_beat_learned_layouts_until_removed() {
+        let mut e = engine();
+        e.config.title_tracking_apps.push("browser".into());
+        e.focus_site("browser", "Search", "", "google.com");
+        assert!(e.layout_changed("ua"));
+        e.focus_site("browser", "Mail", "", "google.com");
+        e.selected("ua", true);
+        assert!(e.layout_changed("en"));
+        assert!(e.toggle_pin(Scope::App));
+        assert_eq!(e.scopes()[2], (Scope::App, Some("en".into()), true));
+        // The app pin overrides the learned page and site layouts (ua).
+        e.focus_site("browser", "Search", "", "google.com");
+        assert_eq!(e.focus_site("browser", "Docs", "", "google.com"), None);
+        // Manual changes while pinned do not move the pin.
+        assert!(e.layout_changed("ua"));
+        assert_eq!(
+            e.focus_site("browser", "Mail", "", "google.com"),
+            Some("en".into())
+        );
+        e.selected("en", true);
+        // Pins survive Clear Cache and persist; removing one restores learning.
+        e.clear();
+        let saved: State = serde_json::from_str(&serde_json::to_string(&e.state).unwrap()).unwrap();
+        assert_eq!(saved.pins.len(), 1);
+        assert!(e.toggle_pin(Scope::App));
+        assert_eq!(e.pin_count(), 0);
+    }
+
+    #[test]
+    fn forget_removes_only_the_chosen_scope() {
+        let mut e = engine();
+        e.focus("terminal", "build");
+        assert!(e.layout_changed("ua"));
+        assert!(e.forget(Scope::Tab));
+        assert!(!e.forget(Scope::Tab));
+        assert!(e.state.entries.contains_key("terminal"));
+        // Untracked apps have no tab scope.
+        e.focus("editor", "file.rs");
+        assert_eq!(e.scopes().len(), 1);
+        assert!(!e.toggle_pin(Scope::Tab));
+    }
+
+    #[test]
+    fn session_tab_pins_are_not_persisted() {
+        let mut e = engine();
+        e.focus_window("terminal", "shell", "window-a");
+        assert!(!e.toggle_pin(Scope::Tab));
+        assert_eq!(e.scopes()[0].1, Some("en".into()));
+        assert!(e.state.pins.is_empty());
+        e.focus_window("terminal", "shell", "window-b");
+        e.layout_changed("ua");
+        assert_eq!(
+            e.focus_window("terminal", "shell", "window-a"),
+            Some("en".into())
         );
     }
 }
