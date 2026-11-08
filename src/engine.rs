@@ -22,6 +22,13 @@ pub struct State {
     /// are never evicted or cleared with the cache.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub pins: BTreeMap<String, String>,
+    /// Tray preference: briefly badge the icon after an automatic switch.
+    #[serde(default = "enabled")]
+    pub show_switch_indicator: bool,
+}
+
+fn enabled() -> bool {
+    true
 }
 
 impl Default for State {
@@ -31,6 +38,7 @@ impl Default for State {
             entries: BTreeMap::new(),
             default_layout: None,
             pins: BTreeMap::new(),
+            show_switch_indicator: true,
         }
     }
 }
@@ -390,6 +398,11 @@ impl Engine {
         removed
     }
 
+    pub fn toggle_switch_indicator(&mut self) {
+        self.state.show_switch_indicator = !self.state.show_switch_indicator;
+        self.dirty = true;
+    }
+
     pub fn clear_pins(&mut self) {
         self.state.pins.clear();
         self.window_pins.clear();
@@ -662,5 +675,16 @@ mod tests {
             e.focus_window("terminal", "shell", "window-a"),
             Some("en".into())
         );
+    }
+
+    #[test]
+    fn switch_indicator_defaults_on_and_persists_when_off() {
+        let old: State = serde_json::from_str(r#"{"version":1,"entries":{}}"#).unwrap();
+        assert!(old.show_switch_indicator);
+        let mut e = Engine::new(Config::default(), old);
+        e.toggle_switch_indicator();
+        assert!(e.dirty);
+        let saved: State = serde_json::from_str(&serde_json::to_string(&e.state).unwrap()).unwrap();
+        assert!(!saved.show_switch_indicator);
     }
 }
