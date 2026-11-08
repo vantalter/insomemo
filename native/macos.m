@@ -556,34 +556,37 @@ void native_update(const char *context, int paused, const char *error, const cha
         updateScopeMenus(menu);
     }
 }
+// SMAppService exists from macOS 13. A runtime class check stands in for
+// @available, whose helper lives in clang's runtime that Rust does not link.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
 int native_login_item(int action) {
-    if (@available(macOS 13.0, *)) {
-        // SMAppService registers the running bundle; a bare binary has none.
-        if (![NSBundle.mainBundle.bundlePath hasSuffix:@".app"])
-            return -1;
-        SMAppService *service = SMAppService.mainAppService;
-        NSError *error = nil;
-        if (action == 1 && service.status != SMAppServiceStatusEnabled &&
-            service.status != SMAppServiceStatusRequiresApproval &&
-            ![service registerAndReturnError:&error])
-            NSLog(@"insomemo: cannot enable Launch at Login: %@", error);
-        else if (action == 0 && service.status != SMAppServiceStatusNotRegistered &&
-                 ![service unregisterAndReturnError:&error])
-            NSLog(@"insomemo: cannot disable Launch at Login: %@", error);
-        // Registration may need the user's approval; take them straight there.
-        if (action == 1 && service.status == SMAppServiceStatusRequiresApproval)
-            [SMAppService openSystemSettingsLoginItems];
-        switch (service.status) {
-        case SMAppServiceStatusEnabled:
-            return 1;
-        case SMAppServiceStatusRequiresApproval:
-            return 2;
-        default:
-            return 0;
-        }
+    // SMAppService registers the running bundle; a bare binary has none.
+    if (!NSClassFromString(@"SMAppService") ||
+        ![NSBundle.mainBundle.bundlePath hasSuffix:@".app"])
+        return -1;
+    SMAppService *service = SMAppService.mainAppService;
+    NSError *error = nil;
+    if (action == 1 && service.status != SMAppServiceStatusEnabled &&
+        service.status != SMAppServiceStatusRequiresApproval &&
+        ![service registerAndReturnError:&error])
+        NSLog(@"insomemo: cannot enable Launch at Login: %@", error);
+    else if (action == 0 && service.status != SMAppServiceStatusNotRegistered &&
+             ![service unregisterAndReturnError:&error])
+        NSLog(@"insomemo: cannot disable Launch at Login: %@", error);
+    // Registration may need the user's approval; take them straight there.
+    if (action == 1 && service.status == SMAppServiceStatusRequiresApproval)
+        [SMAppService openSystemSettingsLoginItems];
+    switch (service.status) {
+    case SMAppServiceStatusEnabled:
+        return 1;
+    case SMAppServiceStatusRequiresApproval:
+        return 2;
+    default:
+        return 0;
     }
-    return -1;
 }
+#pragma clang diagnostic pop
 void native_indicate_switch(void) {
     if (!delegate.status)
         return;
