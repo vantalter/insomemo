@@ -56,12 +56,46 @@ impl Config {
     }
 
     pub fn clean_title(&self, title: &str) -> String {
-        let mut clean = title.split_whitespace().collect::<Vec<_>>().join(" ");
+        let joined = title.split_whitespace().collect::<Vec<_>>().join(" ");
+        let mut clean = strip_unread_badge(&joined).to_owned();
         for suffix in &self.title_suffixes {
             if let Some(prefix) = clean.strip_suffix(suffix) {
                 clean = prefix.trim_end().to_owned();
             }
         }
         clean
+    }
+}
+
+/// Unread counts such as "(3) Inbox" or "[12+] Chat" would make every new
+/// message a new context; strip one leading badge.
+fn strip_unread_badge(title: &str) -> &str {
+    for (open, close) in [('(', ')'), ('[', ']')] {
+        if let Some(rest) = title.strip_prefix(open)
+            && let Some((count, rest)) = rest.split_once(close)
+            && let Some(rest) = rest.strip_prefix(' ')
+        {
+            let digits = count.strip_suffix('+').unwrap_or(count);
+            if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+                return rest;
+            }
+        }
+    }
+    title
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unread_badges_do_not_change_the_context() {
+        let config = Config::default();
+        assert_eq!(config.clean_title("(3) Inbox - Gmail"), "Inbox - Gmail");
+        assert_eq!(config.clean_title("[12+]  general"), "general");
+        assert_eq!(config.clean_title("Inbox - Gmail"), "Inbox - Gmail");
+        assert_eq!(config.clean_title("(draft) notes"), "(draft) notes");
+        assert_eq!(config.clean_title("(2024) report"), "report");
+        assert_eq!(config.clean_title("(+) add"), "(+) add");
     }
 }
