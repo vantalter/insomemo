@@ -49,8 +49,15 @@ with tempfile.TemporaryDirectory(prefix="insomemo-linux-") as directory:
         call(owner, "/MenuBar", "com.canonical.dbusmenu.Event", "2", "clicked", "<0>", "0")
         assert "Resume Auto-Switching" in call(owner, "/MenuBar", "com.canonical.dbusmenu.GetLayout", "0", "-1", "[]")
         call(owner, "/MenuBar", "com.canonical.dbusmenu.Event", "100", "clicked", "<0>", "0")
-        time.sleep(2.2)
-        state = json.loads((pathlib.Path(directory) / "state.json").read_text())
+        state_path = pathlib.Path(directory) / "state.json"
+        clicked = time.monotonic()
+        assert not state_path.exists(), "Save must be debounced, not immediate"
+        # The 2 s debounce plus fsync can overrun a fixed sleep on busy CI runners.
+        while not state_path.exists():
+            assert time.monotonic() - clicked < 10, "Debounced save did not happen"
+            time.sleep(0.1)
+        assert time.monotonic() - clicked >= 1.9, "Save happened before the debounce"
+        state = json.loads(state_path.read_text())
         assert state["default_layout"] == layouts[0]["id"]
         call(owner, "/MenuBar", "com.canonical.dbusmenu.Event", "4", "clicked", "<0>", "0")
         daemon.terminate()
