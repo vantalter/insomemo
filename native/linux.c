@@ -439,6 +439,14 @@ static GVariant *properties(int id) {
             &props, "{sv}", "toggle-state",
             g_variant_new_int32(tray_menu && json_object_get_boolean_member(tray_menu, "indicator")));
         break;
+    case 11: {
+        const char *login = tray_menu ? json_object_get_string_member(tray_menu, "login") : NULL;
+        label = "Launch at Login";
+        g_variant_builder_add(&props, "{sv}", "toggle-type", g_variant_new_string("checkmark"));
+        g_variant_builder_add(&props, "{sv}", "toggle-state",
+                              g_variant_new_int32(!g_strcmp0(login, "on")));
+        break;
+    }
     case 9: {
         gint64 pins = tray_menu ? json_object_get_int_member(tray_menu, "pins") : 0;
         allocated = pins ? g_strdup_printf("Remove All Pins (%" G_GINT64_FORMAT ")", pins)
@@ -483,7 +491,7 @@ static GVariant *menu_node(int id, int depth) {
     if (depth != 0) {
         int next = depth > 0 ? depth - 1 : -1;
         if (id == 0) {
-            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 10, 5};
+            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 10, 11, 5};
             for (size_t i = 0; i < G_N_ELEMENTS(ids); i++)
                 g_variant_builder_add(&children, "v", menu_node(ids[i], next));
         }
@@ -511,6 +519,8 @@ static void clicked(int id, const char *event) {
         emit("clear-pins", "", "");
     if (id == 10)
         emit("indicator-toggle", "", "");
+    if (id == 11)
+        emit("login-toggle", "", "");
     if ((id >= 200 && id < 300 && menu_scope(id - 200)) ||
         (id >= 300 && id < 400 && menu_scope(id - 300))) {
         JsonObject *scope = menu_scope(id % 100);

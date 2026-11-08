@@ -171,7 +171,10 @@ Set `version` in `Cargo.toml`, merge to `main`, then push a matching tag, for ex
 
 ## Optional startup
 
-On macOS, add the built app through System Settings → General → Login Items. On Linux, copy the binary into `~/.local/bin` and use either the provided [desktop entry](packaging/insomemo.desktop) or [systemd user service](packaging/insomemo.service). Ensure the compositor environment is imported before starting the service. Nothing is installed or enabled automatically.
+Choose **Launch at Login** in the tray menu. It is off until you turn it on, and the operating system keeps the setting, so the checkmark always reflects what will happen at your next login.
+
+- **macOS 13 or newer:** the app registers itself as a login item, which appears in System Settings → General → Login Items. If macOS asks for approval, the menu item says so and opens that page. Keep the app at a stable path, such as `/Applications`. On macOS 12, or when running the bare `insomemo` binary, the item is hidden; add the app in Login Items yourself.
+- **Linux:** the app writes an XDG autostart entry, `~/.config/autostart/insomemo.desktop`, that starts the binary at its current path, so install it somewhere stable such as `~/.local/bin` first. GNOME, KDE, Xfce, and other desktops that follow the XDG autostart specification run it; Sway and Hyprland do not by default, so start it from their config (`exec insomemo` or `exec-once = insomemo`) or use the provided [systemd user service](packaging/insomemo.service) instead. Use one method only; a second copy exits because the first holds the state lock.
 
 ## Native references
 
