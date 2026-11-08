@@ -26,6 +26,7 @@ static JsonArray *tray_layouts;
 static char *last_layouts;
 static JsonObject *tray_menu; /* pin/forget scopes, labelled by Rust */
 static char *last_menu;
+static guint attention_timer; /* nonzero while the switch indicator shows */
 static gboolean quit_requested;
 
 static void emit(const char *kind, const char *first, const char *second) {
@@ -431,6 +432,13 @@ static GVariant *properties(int id) {
         enabled = scope_count() > 0;
         g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
         break;
+    case 10:
+        label = "Show Switch Indicator";
+        g_variant_builder_add(&props, "{sv}", "toggle-type", g_variant_new_string("checkmark"));
+        g_variant_builder_add(
+            &props, "{sv}", "toggle-state",
+            g_variant_new_int32(tray_menu && json_object_get_boolean_member(tray_menu, "indicator")));
+        break;
     case 9: {
         gint64 pins = tray_menu ? json_object_get_int_member(tray_menu, "pins") : 0;
         allocated = pins ? g_strdup_printf("Remove All Pins (%" G_GINT64_FORMAT ")", pins)
@@ -475,7 +483,7 @@ static GVariant *menu_node(int id, int depth) {
     if (depth != 0) {
         int next = depth > 0 ? depth - 1 : -1;
         if (id == 0) {
-            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 5};
+            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 10, 5};
             for (size_t i = 0; i < G_N_ELEMENTS(ids); i++)
                 g_variant_builder_add(&children, "v", menu_node(ids[i], next));
         }
@@ -501,6 +509,8 @@ static void clicked(int id, const char *event) {
         emit("quit", "", "");
     if (id == 9)
         emit("clear-pins", "", "");
+    if (id == 10)
+        emit("indicator-toggle", "", "");
     if ((id >= 200 && id < 300 && menu_scope(id - 200)) ||
         (id >= 300 && id < 400 && menu_scope(id - 300))) {
         JsonObject *scope = menu_scope(id % 100);
@@ -625,7 +635,9 @@ static GVariant *get_property(GDBusConnection *connection, const gchar *sender, 
     if (!strcmp(name, "XAyatanaLabel") || !strcmp(name, "XAyatanaLabelGuide"))
         return g_variant_new_string("");
     if (!strcmp(name, "Status"))
-        return g_variant_new_string("Active");
+        return g_variant_new_string(attention_timer ? "NeedsAttention" : "Active");
+    if (!strcmp(name, "AttentionIconName"))
+        return g_variant_new_string("input-keyboard");
     if (!strcmp(name, "WindowId"))
         return g_variant_new_int32(0);
     if (!strcmp(name, "IconName"))
@@ -721,6 +733,29 @@ void native_update(const char *context, int paused, const char *error, const cha
         g_dbus_connection_emit_signal(bus, NULL, "/MenuBar", "com.canonical.dbusmenu",
                                       "LayoutUpdated", g_variant_new("(ui)", revision, 0), NULL);
     }
+}
+
+static void emit_status(void) {
+    if (bus)
+        g_dbus_connection_emit_signal(
+            bus, NULL, "/StatusNotifierItem", "org.kde.StatusNotifierItem", "NewStatus",
+            g_variant_new("(s)", attention_timer ? "NeedsAttention" : "Active"), NULL);
+}
+static gboolean attention_done(gpointer data) {
+    (void)data;
+    attention_timer = 0;
+    emit_status();
+    return G_SOURCE_REMOVE;
+}
+/* Best effort: hosts that honour NeedsAttention (KDE, Waybar) show the
+ * attention icon; others ignore it. */
+void native_indicate_switch(void) {
+    gboolean showing = attention_timer != 0;
+    if (showing)
+        g_source_remove(attention_timer);
+    attention_timer = g_timeout_add(1200, attention_done, NULL);
+    if (!showing)
+        emit_status();
 }
 
 static gboolean save(gpointer data) {
