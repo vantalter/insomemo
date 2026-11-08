@@ -90,6 +90,7 @@ fn menu_json(engine: &Engine, layouts: &[Layout]) -> String {
     serde_json::json!({
         "pin_title": format!("Always Use {current} In"),
         "pins": engine.pin_count(),
+        "indicator": engine.state.show_switch_indicator,
         "scopes": scopes,
     })
     .to_string()
@@ -272,6 +273,11 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
                 save = true;
                 None
             }
+            "indicator-toggle" => {
+                engine.toggle_switch_indicator();
+                save = true;
+                None
+            }
             "warning" => {
                 app.warning = first.into();
                 None
@@ -293,6 +299,11 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
                 if success {
                     if !app.save_failed {
                         app.error.clear();
+                    }
+                    // Only focus-driven restores; menu actions are the user's own switch.
+                    let automatic = kind == "context" || kind == "pause";
+                    if automatic && app.engine.state.show_switch_indicator {
+                        unsafe { native::native_indicate_switch() }
                     }
                 } else {
                     app.error = format!("Cannot select layout {layout}; check installed layouts");

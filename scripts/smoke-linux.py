@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="insomemo-linux-") as directory:
         assert owner, "StatusNotifierItem was not registered"
         menu = call(owner, "/MenuBar", "com.canonical.dbusmenu.GetLayout", "0", "-1", "[]")
         assert "Force Default Layout" in menu and "Pause Auto-Switching" in menu
-        assert "Always Use" in menu and "Forget Learned Layout" in menu and "Remove All Pins" in menu
+        assert "Always Use" in menu and "Forget Learned Layout" in menu and "Remove All Pins" in menu and "Show Switch Indicator" in menu
         call(owner, "/MenuBar", "com.canonical.dbusmenu.Event", "2", "clicked", "<0>", "0")
         assert "Resume Auto-Switching" in call(owner, "/MenuBar", "com.canonical.dbusmenu.GetLayout", "0", "-1", "[]")
         call(owner, "/MenuBar", "com.canonical.dbusmenu.Event", "100", "clicked", "<0>", "0")

@@ -80,6 +80,29 @@ static NSString *windowSite(AXUIElementRef window, BOOL safari) {
     return host ?: @"";
 }
 
+// The tray icon with a dot in its top-right corner. A transparent ring around
+// the dot keeps it distinct from the keyboard cards in the one-colour template.
+static NSImage *badgedIcon(NSImage *icon) {
+    NSImage *badged = [NSImage
+         imageWithSize:icon.size
+               flipped:NO
+        drawingHandler:^BOOL(NSRect rect) {
+            [icon drawInRect:rect];
+            CGFloat diameter = rect.size.width * 0.36, gap = rect.size.width * 0.08;
+            NSRect dot = NSMakeRect(NSMaxX(rect) - diameter, NSMaxY(rect) - diameter, diameter,
+                                    diameter);
+            NSGraphicsContext *context = NSGraphicsContext.currentContext;
+            context.compositingOperation = NSCompositingOperationClear;
+            [[NSBezierPath bezierPathWithOvalInRect:NSInsetRect(dot, -gap, -gap)] fill];
+            context.compositingOperation = NSCompositingOperationSourceOver;
+            [NSColor.blackColor set];
+            [[NSBezierPath bezierPathWithOvalInRect:dot] fill];
+            return YES;
+        }];
+    badged.template = YES;
+    return badged;
+}
+
 static NSArray *layoutList(void) {
     NSDictionary *filter = @{
         (__bridge NSString *)kTISPropertyInputSourceIsSelectCapable : @YES,
@@ -123,6 +146,10 @@ static NSArray *layoutList(void) {
 @property NSMenuItem *forgetItem;
 @property NSMenuItem *removePinsItem;
 @property NSString *menuJSON;
+@property NSMenuItem *indicatorItem;
+@property NSImage *trayImage;
+@property NSImage *badgeImage;
+@property NSTimer *badgeTimer;
 @property BOOL trusted;
 @end
 
@@ -161,6 +188,8 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     // actual menu-bar appearance, including selected and high-contrast states.
     trayImage.template = YES;
     self.status.button.image = trayImage;
+    self.trayImage = trayImage;
+    self.badgeImage = badgedIcon(trayImage);
     self.status.button.imagePosition = NSImageOnly;
     self.status.button.imageScaling = NSImageScaleNone;
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Insomemo"];
@@ -200,6 +229,10 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                    keyEquivalent:@""];
     self.removePinsItem.target = self;
     self.removePinsItem.enabled = NO;
+    self.indicatorItem = [menu addItemWithTitle:@"Show Switch Indicator"
+                                         action:@selector(toggleIndicator:)
+                                  keyEquivalent:@""];
+    self.indicatorItem.target = self;
     NSMenuItem *permission = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
                                              action:@selector(permission:)
                                       keyEquivalent:@""];
@@ -360,6 +393,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 - (void)forget:(NSMenuItem *)sender {
     emit(@"forget", sender.representedObject, @"");
 }
+- (void)toggleIndicator:(id)sender {
+    emit(@"indicator-toggle", @"", @"");
+}
 - (void)removePins:(id)sender {
     emit(@"clear-pins", @"", @"");
 }
@@ -461,6 +497,13 @@ static void updateScopeMenus(NSString *json) {
         pins ? [NSString stringWithFormat:@"Remove All Pins (%lu)", (unsigned long)pins]
              : @"Remove All Pins";
     delegate.removePinsItem.enabled = pins > 0;
+    BOOL indicator = [menu[@"indicator"] boolValue];
+    delegate.indicatorItem.state = indicator ? NSControlStateValueOn : NSControlStateValueOff;
+    if (!indicator && delegate.badgeTimer) {
+        [delegate.badgeTimer invalidate];
+        delegate.badgeTimer = nil;
+        delegate.status.button.image = delegate.trayImage;
+    }
 }
 
 void native_update(const char *context, int paused, const char *error, const char *layouts_json,
@@ -495,6 +538,22 @@ void native_update(const char *context, int paused, const char *error, const cha
         delegate.menuJSON = menu;
         updateScopeMenus(menu);
     }
+}
+void native_indicate_switch(void) {
+    if (!delegate.status)
+        return;
+    delegate.status.button.image = delegate.badgeImage;
+    // Restarting the timer turns rapid tab flicking into one continuous badge.
+    [delegate.badgeTimer invalidate];
+    delegate.badgeTimer = [NSTimer timerWithTimeInterval:1.2
+                                                 repeats:NO
+                                                   block:^(NSTimer *timer) {
+                                                       (void)timer;
+                                                       delegate.badgeTimer = nil;
+                                                       delegate.status.button.image =
+                                                           delegate.trayImage;
+                                                   }];
+    [[NSRunLoop mainRunLoop] addTimer:delegate.badgeTimer forMode:NSRunLoopCommonModes];
 }
 void native_schedule_save(void) {
     [delegate.saveTimer invalidate];
