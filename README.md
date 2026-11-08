@@ -4,7 +4,7 @@
 
 Switch to Ukrainian in one Slack conversation and English in a terminal tab. Insomemo learns each choice as you make it and restores it whenever you return to that window, tab, or chat. There are no rules to write: the layout you pick in a context is the layout that context gets next time.
 
-It is a small Rust daemon (about 400 KiB) with a native tray on both platforms. No webview, telemetry, ads, network service, or polling loop.
+It is a small Rust daemon (under 500 KiB, about 12 MB of memory on macOS) with a native tray on both platforms. No webview, telemetry, ads, network service, or polling loop.
 
 ## Why Insomemo
 
@@ -28,10 +28,10 @@ If you only need fixed per-app or per-website rules on macOS, a rule-based switc
 
 | Session | Integration | Availability |
 | --- | --- | --- |
-| Linux X11 | EWMH active window, WM_CLASS/title events, XKB group notifications | Implemented; Linux CI smoke test supplied |
+| Linux X11 | EWMH active window, WM_CLASS/title events, XKB group notifications | Implemented; smoke-tested in CI under Xvfb |
 | Sway | Window/input/workspace IPC subscriptions | Implemented; framing tested, desktop validation needed |
 | Hyprland | Active window/title/layout IPC events | Implemented; framing tested, desktop validation needed |
-| macOS 12+ | NSWorkspace, Accessibility observers, Carbon input sources, NSStatusItem | Built and unit-tested on Apple Silicon |
+| macOS 12+ | NSWorkspace, Accessibility observers, Carbon input sources, NSStatusItem | Built and tested in CI on Apple Silicon and Intel; used daily on Apple Silicon |
 | GNOME/KDE Wayland | Requires compositor-specific extension | Not supported in this version |
 
 Context depends on what an app exposes: most apps must reflect tab or conversation changes in their window title. Ghostty on macOS is tracked by window identity instead.
@@ -77,11 +77,11 @@ The standalone executable is `target/release/insomemo`. To run it in a terminal:
 cargo run --release --locked
 ```
 
-The build targets the host architecture. Build natively on Apple Silicon or Intel; a universal binary is not produced. macOS 12 or newer is the deployment target.
+`make app` builds for the host architecture; the app on the Releases page is universal (Apple Silicon and Intel). macOS 12 or newer is the deployment target.
 
 ## Configuration
 
-No configuration file is required. Defaults include Ghostty, iTerm2, Terminal, Slack, Discord, Viber, common browsers, and several Linux terminals. Matching is exact and case-sensitive against bundle IDs, WM_CLASS, or app_id. The tray displays the identifier to help configure it.
+No configuration file is required. Defaults include Ghostty, iTerm2, Terminal, Slack, Discord, Viber, Chrome, Firefox, Safari, and several Linux terminals. Matching is exact and case-sensitive against bundle IDs, WM_CLASS, or app_id. The tray displays the identifier to help configure it.
 
 ```sh
 mkdir -p ~/.config/insomemo
@@ -101,14 +101,14 @@ See [config/example.json](config/example.json). Restart after editing configurat
 
 The default directory is `$XDG_CONFIG_HOME/insomemo`, falling back to `~/.config/insomemo`. `--state-dir DIR` overrides it; `--config PATH` overrides only the config file. `--check` validates config/state and checks the single-instance lock; it does not start the daemon or test graphical permissions. It creates the private directory and lock if absent.
 
-Upgrading from Input Switcher: when no `insomemo` directory exists, the app reuses an existing `input-switcher` directory so your settings, learned layouts, and single-instance lock are preserved. Quit the old app before opening Insomemo. Its new bundle identifier is `dev.insomemo.app`, so macOS may require a fresh Accessibility grant. The GitHub repository name and visibility are unchanged.
+Upgrading from Input Switcher: when no `insomemo` directory exists, the app reuses an existing `input-switcher` directory so your settings, learned layouts, and single-instance lock are preserved. Quit the old app before opening Insomemo. Its new bundle identifier is `dev.insomemo.app`, so macOS may require a fresh Accessibility grant.
 
 ## How memory works
 
 1. Each context is an app identifier, optionally followed by `:` and the first 16 hex characters of SHA-256 of its normalized title. Ghostty on macOS uses its accessibility window identity instead, so tabs with the same title remain separate and title changes stay in the same tab context. These Ghostty identities last for the Ghostty process, so they are kept in memory only (with their own 200-entry budget) and never written to `state.json`; after either app restarts, the Ghostty app fallback applies until each tab learns a layout again. For title-based apps, whitespace is collapsed and one leading unread badge such as `(3) ` or `[12+] ` is removed; titles are otherwise preserved unless a configured suffix matches. Terminal working directories and renamed documents can still produce new contexts.
-2. On focus/title change, the daemon tries the exact context, its site (macOS browsers), its app fallback, then the optional global default. Without a match, it leaves the layout alone. The site is the page's host without `www.`, read through Accessibility: Chrome and other Chromium-based apps publish it on the window, Safari on its web view. Firefox and apps without a web address fall back to titles only.
+2. On focus/title change, the daemon tries the exact context, its site (macOS browsers), its app fallback, then the optional global default. Without a match, it leaves the layout alone. The site is the page's host without `www.`, read through Accessibility: Chrome publishes it on the window, Safari on its web view. Site learning applies to apps in `title_tracking_apps`; other Chromium-based browsers likely work the same way once added there, for example `com.microsoft.edgemac`, `com.brave.Browser`, or `company.thebrowser.Browser` (Arc). Firefox has not been verified; apps without a web address use titles only.
 3. A manual layout change teaches the active context. The first manual choice in a title-tracked app also establishes its app fallback. Later tab-specific changes preserve that fallback, while a site always takes its latest choice. Automatic restores are not learned as manual choices.
-4. App defaults and title contexts share a 200-entry LRU budget. Least recently used entries are evicted, including app fallbacks. Access order updates in memory and is persisted with the next state write.
+4. App fallbacks, site contexts, and title contexts share a 200-entry LRU budget. Least recently used entries are evicted, including app fallbacks. Pins are never evicted. Access order updates in memory and is persisted with the next state write.
 5. Changes save atomically after two seconds of inactivity. Quit, SIGINT, and SIGTERM flush pending changes. A corrupt/unknown-version state file is preserved and startup fails with an explanation. Unknown fields written by a newer build are ignored, so downgrading keeps your learned layouts. A file lock prevents two instances from modifying the same state directory.
 
 `state.json` contains layout IDs, app IDs, title and site hashes, pins, the switch-indicator setting, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
@@ -145,16 +145,16 @@ cat ~/.config/insomemo/state.json
 
 ## Performance and validation
 
-The macOS main run loop and Linux GLib event loop sleep waiting for OS notifications, IPC sockets, D-Bus, or signals. The only scheduled timer is a one-shot two-second save debounce. Linux drains Xlib's internal event queue through a custom GLib source, including events buffered by synchronous X calls. Compositor requests have bounded response sizes and two-second timeouts.
+The macOS main run loop and Linux GLib event loop sleep waiting for OS notifications, IPC sockets, D-Bus, or signals. The only timers are one-shot: the two-second save debounce and, when the switch indicator is on, the 1.2-second badge. Linux drains Xlib's internal event queue through a custom GLib source, including events buffered by synchronous X calls. Compositor requests have bounded response sizes and two-second timeouts.
 
-The release binary built here is approximately 432 KiB. A sandboxed macOS startup/shutdown smoke test succeeded and peaked at about **58 MiB RSS**. This is a startup peak, not an idle measurement. The PRD's **under 15 MB idle RAM has not been demonstrated**: native framework memory and the target desktop need measurement outside the restricted build environment. No claim of zero measured CPU usage or production readiness is made.
+The macOS release binary is about 480 KiB. Idle on macOS (Apple Silicon), Insomemo's physical memory footprint is about **12 MB** and its CPU use rounds to 0%, measured with `footprint` and `ps`. Its resident size (RSS) reads higher, around 75 MiB, because RSS also counts system framework pages shared with other apps. Linux memory has not been measured yet.
 
 ```sh
 make test
 make check
 ```
 
-Tests cover context restoration, site and app fallback, pins and forgetting, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI runs `scripts/smoke-linux.py` under Xvfb and a session D-Bus to exercise the native tray and persistence.
+Tests cover context restoration, site and app fallback, pins and forgetting, Launch at Login entries, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI runs `scripts/smoke-linux.py` under Xvfb and a session D-Bus to exercise the native tray and persistence.
 
 Manual desktop acceptance checks:
 
@@ -162,6 +162,7 @@ Manual desktop acceptance checks:
 - Rename a tab and verify app fallback, then teach its own layout.
 - Pause, switch apps/layouts, and resume; check that paused changes were not learned.
 - Use Force Default Layout and Clear Cache; restart and verify persistence.
+- Pin a layout to a tab, a site, and an app; check each wins over learned layouts and that unpinning restores them.
 - Remove a saved OS layout; verify that failed restoration is visible in the tray and manual switching still works.
 - Measure idle RSS and CPU after startup and during focus/title/layout changes on each target desktop.
 
