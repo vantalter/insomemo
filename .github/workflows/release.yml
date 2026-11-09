@@ -24,13 +24,15 @@ jobs:
   macos:
     needs: version
     runs-on: macos-15
+    outputs:
+      signed: ${{ steps.signing.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
       - run: cargo test --locked
-      - name: Universal app bundle
+      - name: Universal binary
         run: |
           cargo build --release --locked --target aarch64-apple-darwin
           cargo build --release --locked --target x86_64-apple-darwin
@@ -38,13 +40,65 @@ jobs:
           lipo -create -output target/universal/insomemo \
             target/aarch64-apple-darwin/release/insomemo \
             target/x86_64-apple-darwin/release/insomemo
-          python3 scripts/bundle-macos.py target/universal/insomemo
-          ditto -c -k --keepParent dist/Insomemo.app \
-            "Insomemo-${{ needs.version.outputs.version }}-macos-universal.zip"
+      - name: Developer ID certificate and notary key
+        id: signing
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          missing=""
+          for name in CERTIFICATE CERTIFICATE_PASSWORD API_KEY API_KEY_ID API_ISSUER; do
+            [ -n "$(printenv "$name")" ] || missing="$missing $name"
+          done
+          if [ "$missing" = " CERTIFICATE CERTIFICATE_PASSWORD API_KEY API_KEY_ID API_ISSUER" ]; then
+            echo "::notice::No signing secrets; the macOS app is ad-hoc signed and not notarized"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$missing" ]; then
+            # Partial configuration is a mistake, not a request for an unsigned build.
+            echo "::error::Release signing secrets missing:$missing; see README > Releasing" >&2
+            exit 1
+          fi
+          # A throwaway keychain holds the certificate for this job only.
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -base64 24)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$keychain" \
+            | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')
+          if [ -z "$identity" ]; then
+            echo "::error::MACOS_CERTIFICATE has no Developer ID Application identity" >&2
+            exit 1
+          fi
+          printf '%s' "$API_KEY" > "$RUNNER_TEMP/notary-key.p8"
+          {
+            echo "CODESIGN_IDENTITY=$identity"
+            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/notary-key.p8"
+            echo "APPLE_API_KEY_ID=$API_KEY_ID"
+            echo "APPLE_API_ISSUER=$API_ISSUER"
+          } >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+      - name: Sign, notarize, and package
+        run: |
+          scripts/package-macos.sh target/universal/insomemo \
+            "Insomemo-${{ needs.version.outputs.version }}-macos-universal"
       - uses: actions/upload-artifact@v4
         with:
           name: release-macos
-          path: Insomemo-*.zip
+          path: |
+            Insomemo-*.zip
+            Insomemo-*.dmg
 
   linux:
     needs: version
@@ -54,8 +108,10 @@ jobs:
           # 22.04 keeps the glibc requirement at 2.35 for older distributions.
           - os: ubuntu-22.04
             arch: x86_64
+            goarch: amd64
           - os: ubuntu-22.04-arm
             arch: arm64
+            goarch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -73,10 +129,27 @@ jobs:
           cp target/release/insomemo packaging/insomemo.desktop packaging/insomemo.service \
             README.md LICENSE "$name/"
           tar -czf "$name.tar.gz" "$name"
+      - name: Debian and RPM packages
+        env:
+          NFPM_VERSION: 2.48.0
+          VERSION: ${{ needs.version.outputs.version }}
+          ARCH: ${{ matrix.goarch }}
+        run: |
+          archive="nfpm_${NFPM_VERSION}_Linux_${{ matrix.arch }}.tar.gz"
+          base="https://github.com/goreleaser/nfpm/releases/download/v$NFPM_VERSION"
+          curl -sSfLO "$base/$archive"
+          curl -sSfL "$base/checksums.txt" | grep " $archive\$" | sha256sum -c -
+          tar -xzf "$archive" nfpm
+          for packager in deb rpm; do
+            ./nfpm package -f packaging/linux/nfpm.yaml -p "$packager" -t .
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux-${{ matrix.arch }}
-          path: insomemo-*.tar.gz
+          path: |
+            insomemo-*.tar.gz
+            insomemo*.deb
+            insomemo*.rpm
 
   publish:
     needs: [version, macos, linux]
@@ -99,5 +172,9 @@ jobs:
           sha256sum * > SHA256SUMS
           prerelease=""
           case "$VERSION" in 0.*|*-*) prerelease="--prerelease" ;; esac
+          # Keep the macOS instructions that match how this build was signed.
+          if [ "${{ needs.macos.outputs.signed }}" = "true" ]; then drop=unsigned; else drop=signed; fi
+          sed -e "/<!-- $drop -->/,/<!-- \/$drop -->/d" -e '/^<!-- \/*\(un\)*signed -->$/d' \
+            ../.github/release-notes.md > ../release-notes.md
           gh release create "$GITHUB_REF_NAME" * $prerelease --generate-notes \
-            --title "Insomemo $VERSION" --notes-file ../.github/release-notes.md
+            --title "Insomemo $VERSION" --notes-file ../release-notes.md
