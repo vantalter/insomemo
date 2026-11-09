@@ -25,10 +25,33 @@ pub struct State {
     /// Tray preference: briefly badge the icon after an automatic switch.
     #[serde(default = "enabled")]
     pub show_switch_indicator: bool,
+    /// Corner of the tray icon that carries the badge (macOS).
+    #[serde(default)]
+    pub switch_indicator_position: IndicatorPosition,
 }
 
 fn enabled() -> bool {
     true
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IndicatorPosition {
+    BottomRight,
+    /// Also used for positions written by a newer build that this one lacks;
+    /// serde requires this catch-all to be the last variant.
+    #[default]
+    #[serde(other)]
+    TopRight,
+}
+
+impl IndicatorPosition {
+    pub fn id(self) -> &'static str {
+        match self {
+            IndicatorPosition::TopRight => "top-right",
+            IndicatorPosition::BottomRight => "bottom-right",
+        }
+    }
 }
 
 impl Default for State {
@@ -39,6 +62,7 @@ impl Default for State {
             default_layout: None,
             pins: BTreeMap::new(),
             show_switch_indicator: true,
+            switch_indicator_position: IndicatorPosition::TopRight,
         }
     }
 }
@@ -403,6 +427,15 @@ impl Engine {
         self.dirty = true;
     }
 
+    /// `None` turns the indicator off; a position turns it on in that corner.
+    pub fn set_switch_indicator(&mut self, position: Option<IndicatorPosition>) {
+        self.state.show_switch_indicator = position.is_some();
+        if let Some(position) = position {
+            self.state.switch_indicator_position = position;
+        }
+        self.dirty = true;
+    }
+
     pub fn clear_pins(&mut self) {
         self.state.pins.clear();
         self.window_pins.clear();
@@ -686,5 +719,28 @@ mod tests {
         assert!(e.dirty);
         let saved: State = serde_json::from_str(&serde_json::to_string(&e.state).unwrap()).unwrap();
         assert!(!saved.show_switch_indicator);
+    }
+
+    #[test]
+    fn indicator_position_persists_and_tolerates_unknown_values() {
+        let mut e = engine();
+        e.set_switch_indicator(Some(IndicatorPosition::BottomRight));
+        let saved = serde_json::to_string(&e.state).unwrap();
+        assert!(saved.contains(r#""switch_indicator_position":"bottom-right""#));
+        let state: State = serde_json::from_str(&saved).unwrap();
+        assert_eq!(
+            state.switch_indicator_position,
+            IndicatorPosition::BottomRight
+        );
+        // Turning it off keeps the corner for when it is turned back on.
+        e.set_switch_indicator(None);
+        assert!(!e.state.show_switch_indicator);
+        assert_eq!(
+            e.state.switch_indicator_position,
+            IndicatorPosition::BottomRight
+        );
+        let newer = r#"{"version":1,"entries":{},"switch_indicator_position":"centre"}"#;
+        let state: State = serde_json::from_str(newer).unwrap();
+        assert_eq!(state.switch_indicator_position, IndicatorPosition::TopRight);
     }
 }

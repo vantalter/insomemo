@@ -81,16 +81,17 @@ static NSString *windowSite(AXUIElementRef window, BOOL safari) {
     return host ?: @"";
 }
 
-// The tray icon with a dot in its top-right corner. A transparent ring around
-// the dot keeps it distinct from the keyboard cards in the one-colour template.
-static NSImage *badgedIcon(NSImage *icon) {
+// The tray icon with a dot in its top- or bottom-right corner. A transparent
+// ring around the dot keeps it distinct from the cards in the one-colour template.
+static NSImage *badgedIcon(NSImage *icon, BOOL bottom) {
     NSImage *badged = [NSImage
          imageWithSize:icon.size
                flipped:NO
         drawingHandler:^BOOL(NSRect rect) {
             [icon drawInRect:rect];
             CGFloat diameter = rect.size.width * 0.36, gap = rect.size.width * 0.08;
-            NSRect dot = NSMakeRect(NSMaxX(rect) - diameter, NSMaxY(rect) - diameter, diameter,
+            NSRect dot = NSMakeRect(NSMaxX(rect) - diameter,
+                                    bottom ? NSMinY(rect) : NSMaxY(rect) - diameter, diameter,
                                     diameter);
             NSGraphicsContext *context = NSGraphicsContext.currentContext;
             context.compositingOperation = NSCompositingOperationClear;
@@ -151,6 +152,8 @@ static NSArray *layoutList(void) {
 @property NSMenuItem *loginItem;
 @property NSImage *trayImage;
 @property NSImage *badgeImage;
+@property NSImage *topBadgeImage;
+@property NSImage *bottomBadgeImage;
 @property NSTimer *badgeTimer;
 @property BOOL trusted;
 @end
@@ -191,7 +194,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     trayImage.template = YES;
     self.status.button.image = trayImage;
     self.trayImage = trayImage;
-    self.badgeImage = badgedIcon(trayImage);
+    self.topBadgeImage = badgedIcon(trayImage, NO);
+    self.bottomBadgeImage = badgedIcon(trayImage, YES);
+    self.badgeImage = self.topBadgeImage;
     self.status.button.imagePosition = NSImageOnly;
     self.status.button.imageScaling = NSImageScaleNone;
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Insomemo"];
@@ -231,10 +236,16 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                    keyEquivalent:@""];
     self.removePinsItem.target = self;
     self.removePinsItem.enabled = NO;
-    self.indicatorItem = [menu addItemWithTitle:@"Show Switch Indicator"
-                                         action:@selector(toggleIndicator:)
-                                  keyEquivalent:@""];
-    self.indicatorItem.target = self;
+    self.indicatorItem = [menu addItemWithTitle:@"Switch Indicator" action:nil keyEquivalent:@""];
+    self.indicatorItem.submenu = [[NSMenu alloc] initWithTitle:@"Switch Indicator"];
+    for (NSArray *choice in @[ @[ @"Off", @"off" ], @[ @"Top Right", @"top-right" ],
+                               @[ @"Bottom Right", @"bottom-right" ] ]) {
+        NSMenuItem *item = [self.indicatorItem.submenu addItemWithTitle:choice[0]
+                                                                 action:@selector(chooseIndicator:)
+                                                          keyEquivalent:@""];
+        item.target = self;
+        item.representedObject = choice[1];
+    }
     self.loginItem = [menu addItemWithTitle:@"Launch at Login"
                                      action:@selector(toggleLogin:)
                               keyEquivalent:@""];
@@ -403,8 +414,8 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 - (void)toggleLogin:(id)sender {
     emit(@"login-toggle", @"", @"");
 }
-- (void)toggleIndicator:(id)sender {
-    emit(@"indicator-toggle", @"", @"");
+- (void)chooseIndicator:(NSMenuItem *)sender {
+    emit(@"indicator", sender.representedObject, @"");
 }
 - (void)removePins:(id)sender {
     emit(@"clear-pins", @"", @"");
@@ -515,7 +526,12 @@ static void updateScopeMenus(NSString *json) {
                                    ? @"Launch at Login (Approve in System Settings…)"
                                    : @"Launch at Login";
     BOOL indicator = [menu[@"indicator"] boolValue];
-    delegate.indicatorItem.state = indicator ? NSControlStateValueOn : NSControlStateValueOff;
+    NSString *chosen = indicator ? menu[@"indicator_position"] : @"off";
+    for (NSMenuItem *item in delegate.indicatorItem.submenu.itemArray)
+        item.state = [item.representedObject isEqualToString:chosen] ? NSControlStateValueOn
+                                                                      : NSControlStateValueOff;
+    delegate.badgeImage = [chosen isEqualToString:@"bottom-right"] ? delegate.bottomBadgeImage
+                                                                     : delegate.topBadgeImage;
     if (!indicator && delegate.badgeTimer) {
         [delegate.badgeTimer invalidate];
         delegate.badgeTimer = nil;
