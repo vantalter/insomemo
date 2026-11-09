@@ -7,7 +7,7 @@ mod storage;
 mod wayland;
 
 use config::Config;
-use engine::{Engine, Scope};
+use engine::{Engine, IndicatorPosition, Scope};
 use native::{Layout, cstring};
 use std::{
     cell::RefCell,
@@ -93,6 +93,7 @@ fn menu_json(engine: &Engine, layouts: &[Layout], login: login::Status) -> Strin
         "pin_title": format!("Always Use {current} In"),
         "pins": engine.pin_count(),
         "indicator": engine.state.show_switch_indicator,
+        "indicator_position": engine.state.switch_indicator_position.id(),
         "login": login.id(),
         "scopes": scopes,
     })
@@ -292,6 +293,19 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
             "indicator-toggle" => {
                 engine.toggle_switch_indicator();
                 save = true;
+                None
+            }
+            "indicator" => {
+                let position = match first {
+                    "top-right" => Some(Some(IndicatorPosition::TopRight)),
+                    "bottom-right" => Some(Some(IndicatorPosition::BottomRight)),
+                    "off" => Some(None),
+                    _ => None,
+                };
+                if let Some(position) = position {
+                    engine.set_switch_indicator(position);
+                    save = true;
+                }
                 None
             }
             "warning" => {
