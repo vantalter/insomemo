@@ -1,4 +1,4 @@
-.PHONY: build test check run app clean
+.PHONY: build test check run app dmg notarize clean
 
 build:
 	cargo build --release --locked
@@ -15,6 +15,13 @@ run:
 
 app: build
 	python3 scripts/bundle-macos.py
+
+dmg: app
+	scripts/make-dmg.sh dist/Insomemo.dmg
+
+# Requires CODESIGN_IDENTITY and NOTARY_PROFILE; see README > Releasing.
+notarize: build
+	scripts/package-macos.sh target/release/insomemo dist/Insomemo
 
 clean:
 	cargo clean
