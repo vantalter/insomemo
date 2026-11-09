@@ -57,7 +57,7 @@ cargo build --release --locked
 ./target/release/insomemo
 ```
 
-The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. The tray shows an icon without an input-source label; its tooltip identifies Insomemo and the active context. Without a tray host, switching continues and SIGTERM quits cleanly.
+The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. The tray shows the same stacked-keyboard icon as on macOS, as symbolic SVGs that KDE and GTK-based hosts such as Waybar recolour to match the panel; the app writes them to `$XDG_RUNTIME_DIR/insomemo/icons` at startup. There is no input-source label; the tooltip identifies Insomemo and the active context. Without a tray host, switching continues and SIGTERM quits cleanly.
 
 Sway and Hyprland are detected before X11 from `SWAYSOCK` / `HYPRLAND_INSTANCE_SIGNATURE`. Other Wayland sessions fail explicitly; XWayland cannot provide complete context for native Wayland applications. Run the daemon inside the graphical session so it inherits compositor and D-Bus environment variables.
 
@@ -126,7 +126,7 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 
 **Always Use … In** pins the current layout to *This Tab or Window*, *This Site* (macOS browsers), or *This App*. A pin beats every learned layout: the tab pin first, then the site, then the app. Clicking a checked pin removes it. Manual changes in a pinned context are still learned, so removing the pin restores learned behaviour. **Forget Learned Layout** removes the learned layout for one of those scopes without touching pins. Pins survive **Clear Cache**; **Remove All Pins** clears them. Pins on Ghostty tabs last only for the session, like the tabs' learned layouts.
 
-**Switch Indicator** (on by default) badges the tray icon with a dot for about a second whenever Insomemo itself switches the layout, so you can tell an automatic restore from your own change. Switching tabs quickly keeps one badge showing rather than flashing. On macOS the badge is an instant icon change with no animation, and the **Switch Indicator** submenu chooses **Off**, **Top Right** (the default), or **Bottom Right** for the dot. On Linux it uses the StatusNotifier `NeedsAttention` status, which hosts such as KDE and Waybar can show and others may ignore; the tray offers an on/off **Show Switch Indicator** toggle. The settings are saved in `state.json`.
+**Switch Indicator** (on by default) badges the tray icon with a dot for about a second whenever Insomemo itself switches the layout, so you can tell an automatic restore from your own change. Switching tabs quickly keeps one badge showing rather than flashing. The badge is an instant icon change with no animation, and the **Switch Indicator** submenu chooses **Off**, **Top Right** (the default), or **Bottom Right** for the dot. The settings are saved in `state.json`.
 
 Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Most apps must expose tab changes through their window title; Ghostty's native macOS tabs are tracked by accessibility window identity. Insomemo does not inspect browser content or capture keystrokes.
 

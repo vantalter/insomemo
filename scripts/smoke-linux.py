@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 import time
@@ -46,7 +47,11 @@ with tempfile.TemporaryDirectory(prefix="insomemo-linux-") as directory:
         assert owner, "StatusNotifierItem was not registered"
         menu = call(owner, "/MenuBar", "com.canonical.dbusmenu.GetLayout", "0", "-1", "[]")
         assert "Force Default Layout" in menu and "Pause Auto-Switching" in menu
-        assert "Always Use" in menu and "Forget Learned Layout" in menu and "Remove All Pins" in menu and "Show Switch Indicator" in menu and "Launch at Login" in menu
+        assert "Always Use" in menu and "Forget Learned Layout" in menu and "Remove All Pins" in menu and "Switch Indicator" in menu and "Launch at Login" in menu
+        prop = lambda name: call(owner, "/StatusNotifierItem", "org.freedesktop.DBus.Properties.Get", "org.kde.StatusNotifierItem", name)
+        assert "'insomemo-symbolic'" in prop("IconName")
+        icons = pathlib.Path(re.search(r"'([^']+)'", prop("IconThemePath")).group(1))
+        assert (icons / "insomemo-symbolic.svg").exists() and (icons / "insomemo-bottom-right-symbolic.svg").exists()
         call(owner, "/MenuBar", "com.canonical.dbusmenu.Event", "2", "clicked", "<0>", "0")
         assert "Resume Auto-Switching" in call(owner, "/MenuBar", "com.canonical.dbusmenu.GetLayout", "0", "-1", "[]")
         call(owner, "/MenuBar", "com.canonical.dbusmenu.Event", "100", "clicked", "<0>", "0")
