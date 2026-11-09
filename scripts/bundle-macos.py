@@ -3,6 +3,7 @@
 
 Usage: bundle-macos.py [BINARY]  (default: target/release/insomemo)
 """
+import os
 import pathlib
 import plistlib
 import re
@@ -67,5 +68,10 @@ with (contents / "Info.plist").open("wb") as output:
         "LSUIElement": True,
         "NSHighResolutionCapable": True,
     }, output)
-subprocess.run(["codesign", "--force", "--sign", "-", str(bundle)], check=True)
+identity = os.environ.get("CODESIGN_IDENTITY", "-")
+signing = ["codesign", "--force", "--sign", identity]
+if identity != "-":
+    # Developer ID distribution requires the hardened runtime and a secure timestamp.
+    signing += ["--options", "runtime", "--timestamp"]
+subprocess.run(signing + [str(bundle)], check=True)
 print(bundle)

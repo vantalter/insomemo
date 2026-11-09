@@ -4,16 +4,25 @@ Insomemo remembers your keyboard layout per window, tab, and conversation on Lin
 
 | File | Platform |
 | --- | --- |
-| `Insomemo-*-macos-universal.zip` | macOS 12+, Apple Silicon and Intel |
-| `insomemo-*-linux-x86_64.tar.gz` | Linux x86_64, glibc 2.35+ (Ubuntu 22.04, Debian 12, Fedora 36 or newer) |
-| `insomemo-*-linux-arm64.tar.gz` | Linux arm64, glibc 2.35+ |
+| `Insomemo-*-macos-universal.dmg` | macOS 12+, Apple Silicon and Intel |
+| `Insomemo-*-macos-universal.zip` | The same app as a zip, for scripted installs |
+| `insomemo_*_amd64.deb`, `insomemo_*_arm64.deb` | Ubuntu 22.04+, Debian 12+, and derivatives such as Linux Mint and Pop!_OS |
+| `insomemo-*.x86_64.rpm`, `insomemo-*.aarch64.rpm` | Fedora 36+, openSUSE Tumbleweed, and other RPM distributions with glibc 2.35+ |
+| `insomemo-*-linux-x86_64.tar.gz`, `insomemo-*-linux-arm64.tar.gz` | Any other Linux with glibc 2.35+ |
 | `SHA256SUMS` | Checksums for the files above |
 
 ## Install
 
-**macOS:** unzip and move `Insomemo.app` to `/Applications`. The app is not notarized, so the first launch is blocked by Gatekeeper: right-click the app and choose **Open**, or run `xattr -d com.apple.quarantine /Applications/Insomemo.app`. Then choose **Enable Window / Tab Tracking…** in its menu and grant Accessibility access. To start Insomemo automatically, choose **Launch at Login** after the app is in `/Applications`; the login item points at the app's current location.
+<!-- signed -->
+**macOS:** open the `.dmg` and drag Insomemo onto the Applications shortcut. The app is signed with a Developer ID and notarized by Apple, so it opens normally. Then choose **Enable Window / Tab Tracking…** in its menu and grant Accessibility access. To start Insomemo automatically, choose **Launch at Login** once the app is in `/Applications`; the login item points at the app's current location.
+<!-- /signed -->
+<!-- unsigned -->
+**macOS:** open the `.dmg` and drag Insomemo onto the Applications shortcut. This build is not yet notarized, so macOS blocks the first launch. On macOS 15 or newer, open it once, then choose **Open Anyway** in System Settings → Privacy & Security. On macOS 12–14, right-click the app and choose **Open**. Alternatively, run `xattr -d com.apple.quarantine /Applications/Insomemo.app`. Then choose **Enable Window / Tab Tracking…** in its menu and grant Accessibility access. To start Insomemo automatically, choose **Launch at Login** once the app is in `/Applications`; the login item points at the app's current location.
+<!-- /unsigned -->
 
-**Linux:** needs GLib, json-glib, libX11, and libxkbcommon (installed on most desktops) and a StatusNotifier tray host. Copy `insomemo` to `~/.local/bin`, then choose **Launch at Login** in its tray menu, or use the included systemd user service on Sway and Hyprland. Build from source on systems older than glibc 2.35.
+**Debian, Ubuntu:** `sudo apt install ./insomemo_*_amd64.deb` (or `arm64`). **Fedora, openSUSE:** `sudo dnf install ./insomemo-*.x86_64.rpm` (or `zypper install`, or `aarch64`). The package manager installs GLib, json-glib, libX11, and libxkbcommon, and Insomemo appears in your application menu. **Other distributions:** extract the tarball, install those four libraries, and copy `insomemo` to `~/.local/bin`.
+
+Then choose **Launch at Login** in the tray menu; a StatusNotifier tray host is needed for the menu. On Sway and Hyprland, which ignore autostart entries, run `systemctl --user enable --now insomemo` instead (packages include the unit; for the tarball, copy `insomemo.service` to `~/.config/systemd/user/`). Build from source on systems older than glibc 2.35.
 
 ## Privacy
 
@@ -21,6 +30,8 @@ Insomemo opens no network connections and does not read keystrokes. To confirm, 
 
 ## Known limitations
 
-- macOS builds are ad-hoc signed. Updating may require granting Accessibility access again.
+<!-- unsigned -->
+- This macOS build is ad-hoc signed. Updating may require granting Accessibility access again.
+<!-- /unsigned -->
 - Sway and Hyprland support is experimental: IPC handling is tested, but real desktops have not been validated.
 - GNOME and KDE on Wayland are not supported.

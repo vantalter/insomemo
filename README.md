@@ -38,7 +38,14 @@ Context depends on what an app exposes: most apps must reflect tab or conversati
 
 ## Install
 
-Download the latest build from [Releases](https://github.com/vantalter/insomemo/releases): a universal macOS app (Apple Silicon and Intel) and Linux binaries for x86_64 and arm64 (glibc 2.35+). The release notes cover first-launch steps; the sections below build from source.
+Download the latest build from [Releases](https://github.com/vantalter/insomemo/releases):
+
+- **macOS:** a universal `.dmg` (Apple Silicon and Intel). Drag Insomemo onto Applications.
+- **Debian, Ubuntu, and derivatives:** a `.deb`; `sudo apt install ./insomemo_*.deb`.
+- **Fedora, openSUSE, and other RPM distributions:** an `.rpm`; `sudo dnf install ./insomemo-*.rpm` or `zypper install`.
+- **Any other Linux:** a tarball with the binary, desktop entry, and systemd user unit.
+
+Linux builds are for x86_64 and arm64 and need glibc 2.35 or newer. Packages pull in their libraries and install a desktop entry and a systemd user unit (not enabled). The release notes cover first-launch steps; the sections below build from source.
 
 ## Build and run on Linux
 
@@ -65,11 +72,13 @@ make app
 open "dist/Insomemo.app"
 ```
 
+`make dmg` also packages the app as `dist/Insomemo.dmg`, the same drag-to-install disk image the releases publish.
+
 The app lives in the menu bar, without a Dock icon. Its monochrome stacked-keyboard symbol automatically renders white or dark to match the macOS menu bar. The tray is icon-only; the OS input menu shows the current language. Pausing dims the macOS icon while keeping its menu available. The purple app artwork is bundled as a multi-resolution macOS icon; artwork and preparation notes are in [assets](assets/README.md).
 
 To place Insomemo beside the macOS input-source icon, hold **Command** and drag the Insomemo icon there. The status item has a stable macOS autosave name so the system can retain its identity across launches. If the system input-source icon is hidden, Insomemo remains in its normal menu-bar position. macOS does not provide a supported API to position this app automatically relative to that system icon.
 
-Open its menu and select **Enable Window / Tab Tracking…**, then grant **Accessibility** access in System Settings → Privacy & Security → Accessibility. Until granted, application-level tracking works, but titles are unavailable. After granting access, switch to another app or reopen the tray menu. A rebuild may require granting permission again; keep the bundle at a stable path. This local app is ad-hoc signed, not notarized for distribution.
+Open its menu and select **Enable Window / Tab Tracking…**, then grant **Accessibility** access in System Settings → Privacy & Security → Accessibility. Until granted, application-level tracking works, but titles are unavailable. After granting access, switch to another app or reopen the tray menu. A local build is ad-hoc signed, so each rebuild may require granting permission again; keep the bundle at a stable path. Once release signing is configured, release builds are signed with a Developer ID and notarized, so the grant survives updates.
 
 The standalone executable is `target/release/insomemo`. To run it in a terminal:
 
@@ -169,6 +178,26 @@ Manual desktop acceptance checks:
 ## Releasing
 
 Set `version` in `Cargo.toml`, merge to `main`, then push a matching tag, for example `git tag v0.1.0 && git push origin v0.1.0`. The release workflow checks that the tag matches, tests and builds every platform, and publishes a GitHub release with checksums. Versions below 1.0 are published as pre-releases.
+
+When these repository secrets are set, the macOS app and disk image are signed with a Developer ID, use the hardened runtime, and are notarized and stapled. Without any of them, the app is ad-hoc signed and the release notes show the Gatekeeper steps instead. Setting only some of them fails the release, so a typo cannot silently publish an unsigned build.
+
+| Secret | Value |
+| --- | --- |
+| `MACOS_CERTIFICATE` | The **Developer ID Application** certificate and its private key, exported from Keychain Access as `.p12`, base64-encoded: `base64 -i certificate.p12 \| pbcopy` |
+| `MACOS_CERTIFICATE_PASSWORD` | The password chosen when exporting the `.p12` |
+| `APPLE_API_KEY` | The contents of an App Store Connect API key file, `AuthKey_XXXXXXXXXX.p8` (Users and Access → Integrations → Team Keys, Developer access) |
+| `APPLE_API_KEY_ID` | That key's ID |
+| `APPLE_API_ISSUER` | The Issuer ID shown above the key list |
+
+Set them with `gh secret set NAME` or in the repository's Settings → Secrets and variables → Actions.
+
+To produce the same notarized build locally, store notary credentials once with `xcrun notarytool store-credentials insomemo` (it prompts for an API key or Apple ID), then run:
+
+```sh
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=insomemo make notarize
+```
+
+This writes `dist/Insomemo.zip` and `dist/Insomemo.dmg`.
 
 ## Optional startup
 
