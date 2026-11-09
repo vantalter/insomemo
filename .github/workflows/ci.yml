@@ -1,17 +1,35 @@
 name: build-and-test
-on: [push, pull_request]
+on:
+  # Pull requests run CI for their branch; pushes only for main, so a push to
+  # an open pull request's branch is built once rather than twice.
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", LICENSE]
+  pull_request:
+    paths-ignore: ["**.md", LICENSE]
+  workflow_dispatch:
+concurrency:
+  # A newer push to the same pull request cancels its still-running build.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
+        # macOS minutes bill at 10x. Intel macOS runs on main only; pull
+        # requests cover macOS on Apple Silicon, and releases build universal.
+        os: ${{ fromJSON(github.event_name == 'pull_request'
+          && '["macos-15", "ubuntu-24.04", "ubuntu-24.04-arm"]'
+          || '["macos-15", "macos-15-intel", "ubuntu-24.04", "ubuntu-24.04-arm"]') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
       - name: Linux native dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev pkg-config xvfb x11-xkb-utils dbus-x11
@@ -29,3 +47,5 @@ jobs:
         with:
           name: insomemo-${{ matrix.os }}
           path: target/release/insomemo
+          # Private repositories also have an artifact storage quota.
+          retention-days: 7
