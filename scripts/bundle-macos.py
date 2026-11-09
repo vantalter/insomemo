@@ -68,10 +68,25 @@ with (contents / "Info.plist").open("wb") as output:
         "LSUIElement": True,
         "NSHighResolutionCapable": True,
     }, output)
-identity = os.environ.get("CODESIGN_IDENTITY", "-")
+def development_identity():
+    """An installed Apple Development certificate, if any.
+
+    Ad-hoc signatures identify the app by a hash of each build, so macOS treats
+    every rebuild as a new app and its Accessibility grant stops applying. A
+    certificate gives every local build the same identity.
+    """
+    listing = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"],
+                             capture_output=True, text=True).stdout
+    match = re.search(r'"(Apple Development: [^"]+)"', listing)
+    return match.group(1) if match else None
+
+
+# An explicit CODESIGN_IDENTITY wins, including "-" for ad-hoc.
+identity = os.environ.get("CODESIGN_IDENTITY") or development_identity() or "-"
 signing = ["codesign", "--force", "--sign", identity]
-if identity != "-":
+if identity.startswith("Developer ID"):
     # Developer ID distribution requires the hardened runtime and a secure timestamp.
     signing += ["--options", "runtime", "--timestamp"]
 subprocess.run(signing + [str(bundle)], check=True)
+print(f"signed with {identity if identity != '-' else 'ad-hoc signature'}")
 print(bundle)
