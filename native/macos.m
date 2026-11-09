@@ -156,6 +156,7 @@ static NSArray *layoutList(void) {
 @property NSImage *bottomBadgeImage;
 @property NSTimer *badgeTimer;
 @property BOOL trusted;
+@property NSMenuItem *permissionItem;
 @end
 
 static Switcher *delegate;
@@ -251,10 +252,10 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                               keyEquivalent:@""];
     self.loginItem.target = self;
     self.loginItem.hidden = YES;
-    NSMenuItem *permission = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
-                                             action:@selector(permission:)
-                                      keyEquivalent:@""];
-    permission.target = self;
+    self.permissionItem = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
+                                          action:@selector(permission:)
+                                   keyEquivalent:@""];
+    self.permissionItem.target = self;
     [menu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *quit = [menu addItemWithTitle:@"Quit" action:@selector(quit:) keyEquivalent:@"q"];
     quit.target = self;
@@ -274,11 +275,39 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
            selector:@selector(layoutsChanged:)
                name:(__bridge NSString *)kTISNotifyEnabledKeyboardInputSourcesChanged
              object:nil];
+    // Posted whenever any app's Accessibility permission changes in System
+    // Settings, so the menu and tracking follow it without polling.
+    [[NSDistributedNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(accessibilityChanged:)
+               name:@"com.apple.accessibility.api"
+             object:nil
+ suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
     self.trusted = AXIsProcessTrusted();
     emit(@"ready", @"", @"");
     [self layoutChanged:nil];
     [self activated:nil];
+    [self refreshTrust];
     [self reportTrust];
+}
+// Shows the current Accessibility permission in the menu and starts or stops
+// window tracking when it changes.
+- (void)refreshTrust {
+    BOOL trusted = AXIsProcessTrusted();
+    self.permissionItem.title = trusted ? @"Window / Tab Tracking" : @"Enable Window / Tab Tracking…";
+    self.permissionItem.state = trusted ? NSControlStateValueOn : NSControlStateValueOff;
+    if (trusted == self.trusted)
+        return;
+    self.trusted = trusted;
+    [self reportTrust];
+    [self activated:nil];
+}
+- (void)accessibilityChanged:(NSNotification *)notification {
+    // The notification can arrive before the permission database is updated.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+                       [self refreshTrust];
+                   });
 }
 - (void)reportTrust {
     emit(@"warning",
@@ -398,8 +427,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     emit(@"layouts", @"", @"");
 }
 - (void)menuWillOpen:(NSMenu *)menu {
-    if (AXIsProcessTrusted() != self.trusted)
-        [self activated:nil];
+    [self refreshTrust];
     emit(@"layouts", @"", @"");
 }
 - (void)pause:(id)sender {
@@ -427,9 +455,16 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     emit(@"default", sender.representedObject, @"");
 }
 - (void)permission:(id)sender {
+    if (AXIsProcessTrusted()) {
+        // Already granted: the permission can only be changed in System Settings.
+        [NSWorkspace.sharedWorkspace
+            openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?"
+                                         @"Privacy_Accessibility"]];
+        return;
+    }
     NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt : @YES};
     AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
-    [self activated:nil];
+    [self refreshTrust];
 }
 - (void)quit:(id)sender {
     emit(@"quit", @"", @"");
