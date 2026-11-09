@@ -26,7 +26,8 @@ static JsonArray *tray_layouts;
 static char *last_layouts;
 static JsonObject *tray_menu; /* pin/forget scopes, labelled by Rust */
 static char *last_menu;
-static guint attention_timer; /* nonzero while the switch indicator shows */
+static guint badge_timer;       /* nonzero while the switch indicator shows */
+static char *icon_theme_path;   /* Insomemo's symbolic icons; NULL uses the theme */
 static gboolean quit_requested;
 
 static void emit(const char *kind, const char *first, const char *second) {
@@ -390,6 +391,21 @@ static JsonObject *menu_scope(int index) {
                : NULL;
 }
 
+/* Switch Indicator submenu: labels and the values sent to Rust. */
+enum { INDICATOR_OFF = 600 };
+static const char *const indicator_choices[][2] = {
+    {"Off", "off"}, {"Top Right", "top-right"}, {"Bottom Right", "bottom-right"}};
+static const char *indicator_position(void) {
+    return tray_menu && json_object_has_member(tray_menu, "indicator_position")
+               ? json_object_get_string_member(tray_menu, "indicator_position")
+               : "top-right";
+}
+static const char *indicator_choice(void) {
+    return tray_menu && json_object_get_boolean_member(tray_menu, "indicator")
+               ? indicator_position()
+               : "off";
+}
+
 static GVariant *properties(int id) {
     GVariantBuilder props;
     g_variant_builder_init(&props, G_VARIANT_TYPE("a{sv}"));
@@ -433,11 +449,17 @@ static GVariant *properties(int id) {
         g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
         break;
     case 10:
-        label = "Show Switch Indicator";
-        g_variant_builder_add(&props, "{sv}", "toggle-type", g_variant_new_string("checkmark"));
+        label = "Switch Indicator";
+        g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
+        break;
+    case INDICATOR_OFF:
+    case INDICATOR_OFF + 1:
+    case INDICATOR_OFF + 2:
+        label = indicator_choices[id - INDICATOR_OFF][0];
+        g_variant_builder_add(&props, "{sv}", "toggle-type", g_variant_new_string("radio"));
         g_variant_builder_add(
             &props, "{sv}", "toggle-state",
-            g_variant_new_int32(tray_menu && json_object_get_boolean_member(tray_menu, "indicator")));
+            g_variant_new_int32(!strcmp(indicator_choice(), indicator_choices[id - INDICATOR_OFF][1])));
         break;
     case 11: {
         const char *login = tray_menu ? json_object_get_string_member(tray_menu, "login") : NULL;
@@ -495,6 +517,9 @@ static GVariant *menu_node(int id, int depth) {
             for (size_t i = 0; i < G_N_ELEMENTS(ids); i++)
                 g_variant_builder_add(&children, "v", menu_node(ids[i], next));
         }
+        if (id == 10)
+            for (int i = 0; i < 3; i++)
+                g_variant_builder_add(&children, "v", menu_node(INDICATOR_OFF + i, next));
         if (id == 7 || id == 8)
             for (guint i = 0; i < scope_count(); i++)
                 g_variant_builder_add(&children, "v",
@@ -517,8 +542,8 @@ static void clicked(int id, const char *event) {
         emit("quit", "", "");
     if (id == 9)
         emit("clear-pins", "", "");
-    if (id == 10)
-        emit("indicator-toggle", "", "");
+    if (id >= INDICATOR_OFF && id < INDICATOR_OFF + 3)
+        emit("indicator", indicator_choices[id - INDICATOR_OFF][1], "");
     if (id == 11)
         emit("login-toggle", "", "");
     if ((id >= 200 && id < 300 && menu_scope(id - 200)) ||
@@ -619,6 +644,19 @@ static void method_call(GDBusConnection *connection, const gchar *sender, const 
             invocation, "org.freedesktop.DBus.Error.UnknownMethod", "Unknown method");
 }
 
+/* Mirrors the macOS template icon; symbolic names follow the panel's colour. */
+static const char *icon_name(void) {
+    static char badged[64];
+    if (tray_paused)
+        return "media-playback-pause-symbolic";
+    if (!icon_theme_path)
+        return "input-keyboard-symbolic";
+    if (!badge_timer)
+        return "insomemo-symbolic";
+    g_snprintf(badged, sizeof badged, "insomemo-%s-symbolic", indicator_position());
+    return badged;
+}
+
 static GVariant *get_property(GDBusConnection *connection, const gchar *sender, const gchar *path,
                               const gchar *interface, const gchar *name, GError **error,
                               gpointer user_data) {
@@ -645,18 +683,17 @@ static GVariant *get_property(GDBusConnection *connection, const gchar *sender, 
     if (!strcmp(name, "XAyatanaLabel") || !strcmp(name, "XAyatanaLabelGuide"))
         return g_variant_new_string("");
     if (!strcmp(name, "Status"))
-        return g_variant_new_string(attention_timer ? "NeedsAttention" : "Active");
-    if (!strcmp(name, "AttentionIconName"))
-        return g_variant_new_string("input-keyboard");
+        return g_variant_new_string("Active");
+    if (!strcmp(name, "IconThemePath"))
+        return g_variant_new_string(icon_theme_path ? icon_theme_path : "");
     if (!strcmp(name, "WindowId"))
         return g_variant_new_int32(0);
     if (!strcmp(name, "IconName"))
-        return g_variant_new_string(tray_paused ? "media-playback-pause-symbolic"
-                                                : "input-keyboard-symbolic");
+        return g_variant_new_string(icon_name());
     if (g_str_has_suffix(name, "Pixmap"))
         return empty_pixmap();
     if (!strcmp(name, "ToolTip"))
-        return g_variant_new("(s@a(iiay)ss)", "input-keyboard-symbolic", empty_pixmap(),
+        return g_variant_new("(s@a(iiay)ss)", icon_name(), empty_pixmap(),
                              tray_paused ? "Insomemo (Paused)" : "Insomemo",
                              tray_context ? tray_context : "");
     if (!strcmp(name, "Menu"))
@@ -745,27 +782,32 @@ void native_update(const char *context, int paused, const char *error, const cha
     }
 }
 
-static void emit_status(void) {
-    if (bus)
-        g_dbus_connection_emit_signal(
-            bus, NULL, "/StatusNotifierItem", "org.kde.StatusNotifierItem", "NewStatus",
-            g_variant_new("(s)", attention_timer ? "NeedsAttention" : "Active"), NULL);
+void native_set_icon_theme(const char *path) {
+    g_free(icon_theme_path);
+    icon_theme_path = g_strdup(path);
 }
-static gboolean attention_done(gpointer data) {
+static void emit_icon(void) {
+    if (bus)
+        g_dbus_connection_emit_signal(bus, NULL, "/StatusNotifierItem",
+                                      "org.kde.StatusNotifierItem", "NewIcon", NULL, NULL);
+}
+static gboolean badge_done(gpointer data) {
     (void)data;
-    attention_timer = 0;
-    emit_status();
+    badge_timer = 0;
+    emit_icon();
     return G_SOURCE_REMOVE;
 }
-/* Best effort: hosts that honour NeedsAttention (KDE, Waybar) show the
- * attention icon; others ignore it. */
+/* Swaps in the badged icon, like macOS; without Insomemo's icons there is
+ * nothing to badge. */
 void native_indicate_switch(void) {
-    gboolean showing = attention_timer != 0;
+    if (!icon_theme_path)
+        return;
+    gboolean showing = badge_timer != 0;
     if (showing)
-        g_source_remove(attention_timer);
-    attention_timer = g_timeout_add(1200, attention_done, NULL);
+        g_source_remove(badge_timer);
+    badge_timer = g_timeout_add(1200, badge_done, NULL);
     if (!showing)
-        emit_status();
+        emit_icon();
 }
 
 static gboolean save(gpointer data) {

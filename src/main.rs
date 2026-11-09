@@ -4,6 +4,8 @@ mod login;
 mod native;
 mod storage;
 #[cfg(any(target_os = "linux", test))]
+mod tray_svg;
+#[cfg(any(target_os = "linux", test))]
 mod wayland;
 
 use config::Config;
@@ -290,11 +292,6 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
                 }
                 None
             }
-            "indicator-toggle" => {
-                engine.toggle_switch_indicator();
-                save = true;
-                None
-            }
             "indicator" => {
                 let position = match first {
                     "top-right" => Some(Some(IndicatorPosition::TopRight)),
@@ -462,6 +459,10 @@ fn run() -> Result<(), String> {
             login: login::Status::Unsupported,
         })
     });
+    #[cfg(target_os = "linux")]
+    if let Some(dir) = tray_svg::install() {
+        unsafe { native::native_set_icon_theme(cstring(&dir.to_string_lossy()).as_ptr()) }
+    }
     let status = unsafe { native::native_run(fd) };
     flush();
     let save_error = APP.with(|slot| {

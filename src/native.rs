@@ -22,6 +22,9 @@ unsafe extern "C" {
     );
     pub fn native_schedule_save();
     pub fn native_indicate_switch();
+    /// Directory holding Insomemo's symbolic tray icons, advertised to the tray host.
+    #[cfg(target_os = "linux")]
+    pub fn native_set_icon_theme(path: *const c_char);
     /// -1 queries, 0 disables, 1 enables. Returns -1 unsupported, 0 off, 1 on, 2 needs approval.
     #[cfg(target_os = "macos")]
     pub fn native_login_item(action: c_int) -> c_int;

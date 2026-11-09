@@ -422,11 +422,6 @@ impl Engine {
         removed
     }
 
-    pub fn toggle_switch_indicator(&mut self) {
-        self.state.show_switch_indicator = !self.state.show_switch_indicator;
-        self.dirty = true;
-    }
-
     /// `None` turns the indicator off; a position turns it on in that corner.
     pub fn set_switch_indicator(&mut self, position: Option<IndicatorPosition>) {
         self.state.show_switch_indicator = position.is_some();
@@ -715,7 +710,7 @@ mod tests {
         let old: State = serde_json::from_str(r#"{"version":1,"entries":{}}"#).unwrap();
         assert!(old.show_switch_indicator);
         let mut e = Engine::new(Config::default(), old);
-        e.toggle_switch_indicator();
+        e.set_switch_indicator(None);
         assert!(e.dirty);
         let saved: State = serde_json::from_str(&serde_json::to_string(&e.state).unwrap()).unwrap();
         assert!(!saved.show_switch_indicator);
