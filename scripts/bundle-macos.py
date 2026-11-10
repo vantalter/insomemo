@@ -8,7 +8,6 @@ import pathlib
 import plistlib
 import re
 import shutil
-import struct
 import subprocess
 import sys
 import tempfile
@@ -35,24 +34,11 @@ with tempfile.TemporaryDirectory(prefix="insomemo-icons-") as directory:
                 "sips", "-z", str(pixels), str(pixels), str(root / "assets/AppIcon.png"),
                 "--out", str(iconset / f"icon_{points}x{points}{suffix}.png"),
             ], check=True, stdout=subprocess.DEVNULL)
-    # ICNS is a big-endian container of typed image representations. Assemble
-    # the PNG representations directly so packaging does not depend on
-    # iconutil's encoder, including in sandboxed/headless build environments.
-    representations = (
-        (b"icp4", "icon_16x16.png"), (b"ic11", "icon_16x16@2x.png"),
-        (b"icp5", "icon_32x32.png"), (b"ic12", "icon_32x32@2x.png"),
-        (b"ic07", "icon_128x128.png"), (b"ic13", "icon_128x128@2x.png"),
-        (b"ic08", "icon_256x256.png"), (b"ic14", "icon_256x256@2x.png"),
-        (b"ic09", "icon_512x512.png"), (b"ic10", "icon_512x512@2x.png"),
-    )
-    chunks = []
-    for kind, filename in representations:
-        png = (iconset / filename).read_bytes()
-        chunks.append(kind + struct.pack(">I", len(png) + 8) + png)
-    payload = b"".join(chunks)
-    (contents / "Resources/AppIcon.icns").write_bytes(
-        b"icns" + struct.pack(">I", len(payload) + 8) + payload
-    )
+    # iconutil stores the 16- and 32-pixel sizes in the formats every part of
+    # macOS reads. Hand-assembled PNG "icp4"/"icp5" entries showed as noise in
+    # System Settings' privacy lists.
+    subprocess.run(["iconutil", "-c", "icns", str(iconset),
+                    "-o", str(contents / "Resources/AppIcon.icns")], check=True)
 with (contents / "Info.plist").open("wb") as output:
     plistlib.dump({
         "CFBundleName": "Insomemo",
