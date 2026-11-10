@@ -206,6 +206,23 @@ Choose **Launch at Login** in the tray menu. It is off until you turn it on, and
 - **macOS 13 or newer:** the app registers itself as a login item, which appears in System Settings → General → Login Items. If macOS asks for approval, the menu item says so and opens that page. Keep the app at a stable path, such as `/Applications`. On macOS 12, or when running the bare `insomemo` binary, the item is hidden; add the app in Login Items yourself.
 - **Linux:** the app writes an XDG autostart entry, `~/.config/autostart/insomemo.desktop`, that starts the binary at its current path, so install it somewhere stable such as `~/.local/bin` first. GNOME, KDE, Xfce, and other desktops that follow the XDG autostart specification run it; Sway and Hyprland do not by default, so start it from their config (`exec insomemo` or `exec-once = insomemo`) or use the provided [systemd user service](packaging/insomemo.service) instead. Use one method only; a second copy exits because the first holds the state lock.
 
+## Troubleshooting
+
+**macOS: the menu still says "Enable Window / Tab Tracking…" although Insomemo is switched on in System Settings.** macOS ties the Accessibility permission to the app's signature. Release builds are not yet signed with a Developer ID, so each update, like each ad-hoc local build, is a new app to macOS; the existing switch belongs to the previous version and no longer applies. Remove the stale entry and grant the permission again:
+
+```sh
+tccutil reset Accessibility dev.insomemo.app
+```
+
+Then choose **Enable Window / Tab Tracking…** in Insomemo's menu and turn on the new entry. The menu changes to **Window / Tab Tracking** within a second, without a restart.
+
+**macOS: Insomemo's icon looks like coloured stripes in System Settings' privacy lists.** Versions up to 0.2.3 stored the small icon sizes in a format those lists misread. Install a newer version, then clear macOS's icon cache in Terminal and restart the Mac:
+
+```sh
+sudo rm -rf /Library/Caches/com.apple.iconservices.store
+rm -rf "$(getconf DARWIN_USER_CACHE_DIR)com.apple.iconservices"
+```
+
 ## Native references
 
 - [Apple application activation notification](https://developer.apple.com/documentation/appkit/nsworkspace/didactivateapplicationnotification)
