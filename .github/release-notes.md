@@ -31,7 +31,7 @@ Insomemo opens no network connections and does not read keystrokes. To confirm, 
 ## Known limitations
 
 <!-- unsigned -->
-- This macOS build is ad-hoc signed. Updating may require granting Accessibility access again.
+- This macOS build is ad-hoc signed, so after updating, macOS treats it as a new app. If the menu still says **Enable Window / Tab Tracking…**, run `tccutil reset Accessibility dev.insomemo.app` and grant the permission again (see the README's Troubleshooting section).
 <!-- /unsigned -->
 - Sway and Hyprland support is experimental: IPC handling is tested, but real desktops have not been validated.
 - GNOME and KDE on Wayland are not supported.
