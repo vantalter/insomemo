@@ -467,13 +467,14 @@ static GVariant *properties(int id) {
         break;
     case INDICATOR_OFF:
     case INDICATOR_OFF + 1:
-    case INDICATOR_OFF + 2:
-        label = indicator_choices[id - INDICATOR_OFF][0];
+    case INDICATOR_OFF + 2: {
+        const char *const *choice = indicator_choices[id - INDICATOR_OFF];
+        label = choice[0];
         g_variant_builder_add(&props, "{sv}", "toggle-type", g_variant_new_string("radio"));
         g_variant_builder_add(&props, "{sv}", "toggle-state",
-                              g_variant_new_int32(!strcmp(indicator_choice(),
-                                                          indicator_choices[id - INDICATOR_OFF][1])));
+                              g_variant_new_int32(!strcmp(indicator_choice(), choice[1])));
         break;
+    }
     case 11: {
         const char *login = tray_menu ? json_object_get_string_member(tray_menu, "login") : NULL;
         label = "Launch at Login";
