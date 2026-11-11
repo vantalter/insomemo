@@ -28,6 +28,9 @@ static JsonObject *tray_menu; /* pin/forget scopes, labelled by Rust */
 static char *last_menu;
 static guint badge_timer;       /* nonzero while the switch indicator shows */
 static char *icon_theme_path;   /* Insomemo's symbolic icons; NULL uses the theme */
+static int dark_ink;            /* dark-ink icons, for light panels */
+static char *cinnamon_theme;    /* Cinnamon's theme name; NULL outside Cinnamon */
+static guint32 color_scheme;    /* portal preference: 0 none, 1 dark, 2 light */
 static gboolean quit_requested;
 
 static void emit(const char *kind, const char *first, const char *second) {
@@ -646,17 +649,17 @@ static void method_call(GDBusConnection *connection, const gchar *sender, const 
             invocation, "org.freedesktop.DBus.Error.UnknownMethod", "Unknown method");
 }
 
-/* Mirrors the macOS template icon; symbolic names follow the panel's colour. */
+/* Mirrors the macOS template icon; symbolic names follow the panel's colour.
+ * The names match tray_svg::name: insomemo[-dark][-<corner>]-symbolic. */
 static const char *icon_name(void) {
-    static char badged[64];
+    static char name[64];
     if (tray_paused)
         return "media-playback-pause-symbolic";
     if (!icon_theme_path)
         return "input-keyboard-symbolic";
-    if (!badge_timer)
-        return "insomemo-symbolic";
-    g_snprintf(badged, sizeof badged, "insomemo-%s-symbolic", indicator_position());
-    return badged;
+    g_snprintf(name, sizeof name, "insomemo%s%s%s-symbolic", dark_ink ? "-dark" : "",
+               badge_timer ? "-" : "", badge_timer ? indicator_position() : "");
+    return name;
 }
 
 static GVariant *get_property(GDBusConnection *connection, const gchar *sender, const gchar *path,
@@ -793,6 +796,114 @@ static void emit_icon(void) {
         g_dbus_connection_emit_signal(bus, NULL, "/StatusNotifierItem",
                                       "org.kde.StatusNotifierItem", "NewIcon", NULL, NULL);
 }
+void native_set_icon_ink(int dark) {
+    if (dark_ink == !!dark)
+        return;
+    dark_ink = !!dark;
+    emit_icon();
+}
+
+/* Hosts that draw the icon file as is need an ink that suits the panel; Rust
+ * decides from Cinnamon's theme or the desktop's light/dark preference. */
+static void report_appearance(void) {
+    char scheme[12];
+    g_snprintf(scheme, sizeof scheme, "%u", color_scheme);
+    emit("appearance", cinnamon_theme ? cinnamon_theme : "-", scheme);
+}
+static void cinnamon_theme_changed(GSettings *settings, const gchar *key, gpointer data) {
+    (void)key;
+    (void)data;
+    g_free(cinnamon_theme);
+    cinnamon_theme = g_settings_get_string(settings, "name");
+    report_appearance();
+}
+static void set_color_scheme(GVariant *value) {
+    // ReadOne returns the value in a variant; the older Read nests one more.
+    GVariant *inner = g_variant_ref(value);
+    while (g_variant_is_of_type(inner, G_VARIANT_TYPE_VARIANT)) {
+        GVariant *next = g_variant_get_variant(inner);
+        g_variant_unref(inner);
+        inner = next;
+    }
+    guint32 scheme = g_variant_is_of_type(inner, G_VARIANT_TYPE_UINT32) ? g_variant_get_uint32(inner) : 0;
+    g_variant_unref(inner);
+    if (scheme == color_scheme)
+        return;
+    color_scheme = scheme;
+    report_appearance();
+}
+static void read_color_scheme(const char *method);
+static void color_scheme_read(GObject *source, GAsyncResult *result, gpointer data) {
+    GError *error = NULL;
+    GVariant *reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error);
+    if (!reply) {
+        // Portals older than version 2 only offer Read. Without a portal, the
+        // default (no preference) stands.
+        if (!strcmp(data, "ReadOne") &&
+            g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD))
+            read_color_scheme("Read");
+        g_error_free(error);
+        return;
+    }
+    GVariant *value = g_variant_get_child_value(reply, 0);
+    set_color_scheme(value);
+    g_variant_unref(value);
+    g_variant_unref(reply);
+}
+static void read_color_scheme(const char *method) {
+    g_dbus_connection_call(bus, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+                           "org.freedesktop.portal.Settings", method,
+                           g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
+                           G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, 5000, NULL,
+                           color_scheme_read, (gpointer)method);
+}
+static void setting_changed(GDBusConnection *connection, const gchar *sender, const gchar *path,
+                            const gchar *interface, const gchar *signal, GVariant *parameters,
+                            gpointer data) {
+    (void)connection;
+    (void)sender;
+    (void)path;
+    (void)interface;
+    (void)signal;
+    (void)data;
+    if (!g_variant_is_of_type(parameters, G_VARIANT_TYPE("(ssv)")))
+        return;
+    const char *group, *key;
+    GVariant *value;
+    g_variant_get(parameters, "(&s&sv)", &group, &key, &value);
+    if (!strcmp(group, "org.freedesktop.appearance") && !strcmp(key, "color-scheme"))
+        set_color_scheme(value);
+    g_variant_unref(value);
+}
+static void watch_appearance(void) {
+    // Theme icons are the host's own; only Insomemo's icons have an ink.
+    if (!icon_theme_path)
+        return;
+    const char *desktop = g_getenv("XDG_CURRENT_DESKTOP");
+    GSettingsSchemaSource *source = g_settings_schema_source_get_default();
+    GSettingsSchema *schema =
+        desktop && strstr(desktop, "Cinnamon") && source
+            ? g_settings_schema_source_lookup(source, "org.cinnamon.theme", TRUE)
+            : NULL;
+    if (schema) {
+        if (g_settings_schema_has_key(schema, "name")) {
+            GSettings *settings = g_settings_new_full(schema, NULL, NULL);
+            // The settings object lives as long as the process, for its signal.
+            g_signal_connect(settings, "changed::name", G_CALLBACK(cinnamon_theme_changed), NULL);
+            cinnamon_theme = g_settings_get_string(settings, "name");
+        }
+        g_settings_schema_unref(schema);
+    }
+    if (bus) {
+        g_dbus_connection_signal_subscribe(bus, "org.freedesktop.portal.Desktop",
+                                           "org.freedesktop.portal.Settings", "SettingChanged",
+                                           "/org/freedesktop/portal/desktop", NULL,
+                                           G_DBUS_SIGNAL_FLAGS_NONE, setting_changed, NULL, NULL);
+        read_color_scheme("ReadOne");
+    }
+    report_appearance();
+}
+
 static gboolean badge_done(gpointer data) {
     (void)data;
     badge_timer = 0;
@@ -865,6 +976,7 @@ int native_run(int event_fd) {
         g_clear_error(&error);
     }
     g_dbus_node_info_unref(info);
+    watch_appearance();
     g_unix_signal_add(SIGINT, terminate, NULL);
     g_unix_signal_add(SIGTERM, terminate, NULL);
     if (event_fd >= 0) {

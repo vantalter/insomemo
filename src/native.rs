@@ -25,6 +25,9 @@ unsafe extern "C" {
     /// Directory holding Insomemo's symbolic tray icons, advertised to the tray host.
     #[cfg(target_os = "linux")]
     pub fn native_set_icon_theme(path: *const c_char);
+    /// 1 selects the dark-ink icons, for light panels; see `panel`.
+    #[cfg(target_os = "linux")]
+    pub fn native_set_icon_ink(dark: c_int);
     /// -1 queries, 0 disables, 1 enables. Returns -1 unsupported, 0 off, 1 on, 2 needs approval.
     #[cfg(target_os = "macos")]
     pub fn native_login_item(action: c_int) -> c_int;

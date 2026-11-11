@@ -17,6 +17,8 @@ void native_schedule_save(void);
 void native_indicate_switch(void);
 /* Linux: directory of Insomemo's symbolic tray icons (StatusNotifier IconThemePath). */
 void native_set_icon_theme(const char *path);
+/* Linux: 1 selects the dark-ink icons for light panels, 0 the light ones. */
+void native_set_icon_ink(int dark);
 /* macOS: -1 queries, 0 disables, 1 enables Launch at Login. Returns -1 when
  * unsupported, 0 off, 1 on, 2 awaiting approval in System Settings. */
 int native_login_item(int action);

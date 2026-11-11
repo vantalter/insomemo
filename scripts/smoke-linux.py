@@ -52,7 +52,8 @@ with tempfile.TemporaryDirectory(prefix="insomemo-linux-") as directory:
         prop = lambda name: call(owner, "/StatusNotifierItem", "org.freedesktop.DBus.Properties.Get", "org.kde.StatusNotifierItem", name)
         assert "'insomemo-symbolic'" in prop("IconName")
         icons = pathlib.Path(re.search(r"'([^']+)'", prop("IconThemePath")).group(1))
-        assert (icons / "insomemo-symbolic.svg").exists() and (icons / "insomemo-bottom-right-symbolic.svg").exists()
+        for name in ("insomemo-symbolic", "insomemo-bottom-right-symbolic", "insomemo-dark-symbolic"):
+            assert (icons / f"{name}.svg").exists(), name
         call(owner, "/MenuBar", "com.canonical.dbusmenu.Event", "2", "clicked", "<0>", "0")
         assert "Resume Auto-Switching" in call(owner, "/MenuBar", "com.canonical.dbusmenu.GetLayout", "0", "-1", "[]")
         call(owner, "/MenuBar", "com.canonical.dbusmenu.Event", "100", "clicked", "<0>", "0")
