@@ -4,7 +4,8 @@
 //! overriding fills, KDE through the `ColorScheme-Text` class. Every shape is
 //! therefore a plain fill; holes come from even-odd paths and clip paths.
 //! Hosts that draw the file as is, such as Cinnamon and Enlightenment, use the
-//! stylesheet's colour, a light one because their panels are dark by default.
+//! stylesheet's colour, so each icon comes in a light and a dark ink; `panel`
+//! chooses between them.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 use crate::engine::IndicatorPosition;
 use std::path::{Path, PathBuf};
@@ -14,12 +15,36 @@ const CANVAS: f64 = 72.0;
 const DOT: f64 = CANVAS * 0.36;
 const GAP: f64 = CANVAS * 0.08;
 
-pub const PLAIN: &str = "insomemo-symbolic";
-/// Breeze's text colour on dark panels; see the module documentation.
-const FALLBACK: &str = "eff0f1";
+/// Colour for hosts that do not recolour the icon: light for dark panels,
+/// the default, or dark for light ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ink {
+    Light,
+    Dark,
+}
 
-pub fn badged_name(position: IndicatorPosition) -> String {
-    format!("insomemo-{}-symbolic", position.id())
+impl Ink {
+    /// Breeze's text colours on dark and on light backgrounds.
+    fn colour(self) -> &'static str {
+        match self {
+            Ink::Light => "eff0f1",
+            Ink::Dark => "232629",
+        }
+    }
+}
+
+const BADGES: [Option<IndicatorPosition>; 3] = [
+    None,
+    Some(IndicatorPosition::TopRight),
+    Some(IndicatorPosition::BottomRight),
+];
+
+/// `insomemo[-dark][-<corner>]-symbolic`; `icon_name` in native/linux.c builds
+/// the same names.
+pub fn name(ink: Ink, badge: Option<IndicatorPosition>) -> String {
+    let ink = if ink == Ink::Dark { "-dark" } else { "" };
+    let badge = badge.map_or(String::new(), |position| format!("-{}", position.id()));
+    format!("insomemo{ink}{badge}-symbolic")
 }
 
 /// Two decimals keep the SVG readable, e.g. 25.92 rather than 25.919999999999998.
@@ -45,7 +70,7 @@ fn outline(x: f64, y: f64, w: f64, h: f64, r: f64) -> String {
         + &rounded(x + 2.5, y + 2.5, w - 5.0, h - 5.0, r - 2.5)
 }
 
-pub fn svg(badge: Option<IndicatorPosition>) -> String {
+pub fn svg(badge: Option<IndicatorPosition>, ink: Ink) -> String {
     let canvas = rounded(0.0, 0.0, CANVAS, CANVAS, 0.0);
     let front = rounded(7.0, 23.0, 50.0, 42.0, 8.0);
     let mut holes = String::new();
@@ -86,8 +111,9 @@ pub fn svg(badge: Option<IndicatorPosition>) -> String {
         );
     }
     format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><style id="current-color-scheme">.ColorScheme-Text{{color:#{FALLBACK}}}</style><defs>{defs}</defs>{body}</svg>
-"#
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><style id="current-color-scheme">.ColorScheme-Text{{color:#{}}}</style><defs>{defs}</defs>{body}</svg>
+"#,
+        ink.colour()
     )
 }
 
@@ -118,20 +144,12 @@ fn write_icons(dir: &Path) -> std::io::Result<()> {
     let themed = dir.join("hicolor").join("scalable").join("apps");
     std::fs::create_dir_all(&themed)?;
     std::fs::write(dir.join("hicolor").join("index.theme"), INDEX)?;
-    let icons = [
-        (PLAIN.to_owned(), svg(None)),
-        (
-            badged_name(IndicatorPosition::TopRight),
-            svg(Some(IndicatorPosition::TopRight)),
-        ),
-        (
-            badged_name(IndicatorPosition::BottomRight),
-            svg(Some(IndicatorPosition::BottomRight)),
-        ),
-    ];
-    for (name, contents) in icons {
-        std::fs::write(dir.join(format!("{name}.svg")), &contents)?;
-        std::fs::write(themed.join(format!("{name}.svg")), &contents)?;
+    for ink in [Ink::Light, Ink::Dark] {
+        for badge in BADGES {
+            let (name, contents) = (name(ink, badge), svg(badge, ink));
+            std::fs::write(dir.join(format!("{name}.svg")), &contents)?;
+            std::fs::write(themed.join(format!("{name}.svg")), &contents)?;
+        }
     }
     Ok(())
 }
@@ -142,19 +160,30 @@ mod tests {
 
     #[test]
     fn icons_are_well_formed_and_only_badges_have_a_dot() {
-        let plain = svg(None);
-        let badged = svg(Some(IndicatorPosition::BottomRight));
+        let plain = svg(None, Ink::Light);
+        let badged = svg(Some(IndicatorPosition::BottomRight), Ink::Light);
         for icon in [&plain, &badged] {
             assert!(icon.starts_with("<svg ") && icon.trim_end().ends_with("</svg>"));
             assert_eq!(icon.matches("<path").count(), icon.matches("/>").count());
         }
-        // Hosts that do not recolour need an ink that shows on dark panels.
-        assert!(plain.contains(".ColorScheme-Text{color:#eff0f1}"));
         assert!(!plain.contains("id=\"ring\""));
         assert!(badged.contains("id=\"ring\""));
         // The bottom-right dot sits at y = 72 - 12.96.
         assert!(badged.contains(" 59.04a12.96"));
-        assert_ne!(svg(Some(IndicatorPosition::TopRight)), badged);
+        assert_ne!(svg(Some(IndicatorPosition::TopRight), Ink::Light), badged);
+    }
+
+    #[test]
+    fn inks_differ_only_in_the_colour_hosts_fall_back_to() {
+        let light = svg(None, Ink::Light);
+        let dark = svg(None, Ink::Dark);
+        assert!(light.contains(".ColorScheme-Text{color:#eff0f1}"));
+        assert_eq!(light.replace("eff0f1", "232629"), dark);
+        assert_eq!(name(Ink::Light, None), "insomemo-symbolic");
+        assert_eq!(
+            name(Ink::Dark, Some(IndicatorPosition::TopRight)),
+            "insomemo-dark-top-right-symbolic"
+        );
     }
 
     #[test]
@@ -162,6 +191,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("insomemo-icons-{}", std::process::id()));
         write_icons(&dir).unwrap();
         assert!(dir.join("insomemo-symbolic.svg").exists());
+        assert!(dir.join("insomemo-dark-bottom-right-symbolic.svg").exists());
         assert!(
             dir.join("hicolor/scalable/apps/insomemo-bottom-right-symbolic.svg")
                 .exists()
