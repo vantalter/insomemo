@@ -17,6 +17,7 @@ static GMainLoop *loop;
 static GDBusConnection *bus;
 static Display *display;
 static Window active_window;
+static Atom net_active_window, net_wm_name, utf8_string;
 static int xkb_event;
 static guint save_timer;
 static guint revision = 1;
@@ -100,35 +101,47 @@ static int ensure_display(void) {
     if (display) {
         XSetErrorHandler(x_error);
         XSetIOErrorHandler(x_io_error);
+        // Looked up once: property events are compared against these.
+        net_active_window = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
+        net_wm_name = XInternAtom(display, "_NET_WM_NAME", False);
+        utf8_string = XInternAtom(display, "UTF8_STRING", False);
     }
     return display != NULL;
 }
 
-static char *group_name(int group) {
+/* Fills names[group] for every XKB group (NULL where unset) from one keyboard
+ * description, instead of fetching the description once per group. */
+static void group_names(char *names[XkbNumKbdGroups]) {
+    memset(names, 0, sizeof(char *) * XkbNumKbdGroups);
     XkbDescPtr keyboard = XkbGetMap(display, 0, XkbUseCoreKbd);
     if (!keyboard)
-        return NULL;
-    XkbGetNames(display, XkbGroupNamesMask, keyboard);
-    char *result = NULL;
-    if (keyboard->names && group >= 0 && group < XkbNumKbdGroups &&
-        keyboard->names->groups[group] != None) {
-        char *name = XGetAtomName(display, keyboard->names->groups[group]);
-        if (name) {
-            result = g_strdup(name);
-            XFree(name);
+        return;
+    if (XkbGetNames(display, XkbGroupNamesMask, keyboard) == Success && keyboard->names)
+        for (int i = 0; i < XkbNumKbdGroups; i++) {
+            if (keyboard->names->groups[i] == None)
+                continue;
+            char *name = XGetAtomName(display, keyboard->names->groups[i]);
+            if (name) {
+                names[i] = g_strdup(name);
+                XFree(name);
+            }
         }
-    }
     XkbFreeKeyboard(keyboard, XkbAllComponentsMask, True);
-    return result;
+}
+static void free_group_names(char *names[XkbNumKbdGroups]) {
+    for (int i = 0; i < XkbNumKbdGroups; i++)
+        g_free(names[i]);
 }
 
 char *native_layouts(void) {
     if (!ensure_display())
         return NULL;
+    char *names[XkbNumKbdGroups];
+    group_names(names);
     JsonBuilder *builder = json_builder_new();
     json_builder_begin_array(builder);
     for (int i = 0; i < XkbNumKbdGroups; i++) {
-        char *name = group_name(i);
+        const char *name = names[i];
         if (!name)
             continue;
         char *id = g_strconcat("xkb:", name, NULL);
@@ -150,10 +163,10 @@ char *native_layouts(void) {
         json_builder_set_member_name(builder, "code");
         json_builder_add_string_value(builder, code);
         json_builder_end_object(builder);
-        g_free(name);
         g_free(id);
         g_free(code);
     }
+    free_group_names(names);
     json_builder_end_array(builder);
     JsonNode *root = json_builder_get_root(builder);
     char *result = json_string(root);
@@ -163,46 +176,42 @@ char *native_layouts(void) {
 }
 
 int native_set_layout(const char *id) {
-    if (!display)
+    if (!display || strncmp(id, "xkb:", 4))
         return 0;
-    for (int i = 0; i < XkbNumKbdGroups; i++) {
-        char *name = group_name(i);
-        if (!name)
-            continue;
-        char *candidate = g_strconcat("xkb:", name, NULL);
-        int matches = strcmp(id, candidate) == 0;
-        g_free(candidate);
-        g_free(name);
-        if (matches) {
-            if (!XkbLockGroup(display, XkbUseCoreKbd, i))
-                return 0;
-            XSync(display, False);
-            XkbStateRec state;
-            return XkbGetState(display, XkbUseCoreKbd, &state) == Success && state.group == i;
-        }
-    }
-    return 0;
+    char *names[XkbNumKbdGroups];
+    group_names(names);
+    int group = -1;
+    for (int i = 0; i < XkbNumKbdGroups && group < 0; i++)
+        if (names[i] && !strcmp(id + 4, names[i]))
+            group = i;
+    free_group_names(names);
+    if (group < 0 || !XkbLockGroup(display, XkbUseCoreKbd, group))
+        return 0;
+    XSync(display, False);
+    XkbStateRec state;
+    return XkbGetState(display, XkbUseCoreKbd, &state) == Success && state.group == group;
 }
 
 static void read_layout(void) {
     XkbStateRec state;
-    if (XkbGetState(display, XkbUseCoreKbd, &state) != Success)
+    if (XkbGetState(display, XkbUseCoreKbd, &state) != Success || state.group >= XkbNumKbdGroups)
         return;
-    char *name = group_name(state.group);
-    if (name) {
-        char *id = g_strconcat("xkb:", name, NULL);
+    char *names[XkbNumKbdGroups];
+    group_names(names);
+    if (names[state.group]) {
+        char *id = g_strconcat("xkb:", names[state.group], NULL);
         emit("layout", id, "");
         g_free(id);
-        g_free(name);
     }
+    free_group_names(names);
 }
 
-static unsigned char *property(Window window, const char *name, Atom type, unsigned long *count) {
+static unsigned char *property(Window window, Atom name, Atom type, unsigned long *count) {
     Atom actual;
     int format;
     unsigned long after;
     unsigned char *data = NULL;
-    if (XGetWindowProperty(display, window, XInternAtom(display, name, False), 0, 4096, False, type,
+    if (XGetWindowProperty(display, window, name, 0, 4096, False, type,
                            &actual, &format, count, &after, &data) != Success ||
         actual != type) {
         if (data)
@@ -215,7 +224,7 @@ static unsigned char *property(Window window, const char *name, Atom type, unsig
 static void read_context(void) {
     Window root = DefaultRootWindow(display);
     unsigned long count = 0;
-    unsigned char *data = property(root, "_NET_ACTIVE_WINDOW", XA_WINDOW, &count);
+    unsigned char *data = property(root, net_active_window, XA_WINDOW, &count);
     Window window = data && count ? *(Window *)data : None;
     if (data)
         XFree(data);
@@ -248,7 +257,7 @@ static void read_context(void) {
         active_window = window;
         XSelectInput(display, window, PropertyChangeMask | FocusChangeMask | StructureNotifyMask);
     }
-    data = property(window, "_NET_WM_NAME", XInternAtom(display, "UTF8_STRING", False), &count);
+    data = property(window, net_wm_name, utf8_string, &count);
     char *title = data ? g_utf8_make_valid((char *)data, count) : NULL;
     if (data)
         XFree(data);
@@ -292,8 +301,7 @@ static gboolean x_events(gint fd, GIOCondition condition, gpointer user_data) {
             read_context();
         } else if (event.type == PropertyNotify) {
             Atom atom = event.xproperty.atom;
-            if (atom == XInternAtom(display, "_NET_ACTIVE_WINDOW", False) ||
-                atom == XInternAtom(display, "_NET_WM_NAME", False) || atom == XA_WM_NAME ||
+            if (atom == net_active_window || atom == net_wm_name || atom == XA_WM_NAME ||
                 atom == XA_WM_CLASS)
                 read_context();
         }
@@ -462,9 +470,9 @@ static GVariant *properties(int id) {
     case INDICATOR_OFF + 2:
         label = indicator_choices[id - INDICATOR_OFF][0];
         g_variant_builder_add(&props, "{sv}", "toggle-type", g_variant_new_string("radio"));
-        g_variant_builder_add(
-            &props, "{sv}", "toggle-state",
-            g_variant_new_int32(!strcmp(indicator_choice(), indicator_choices[id - INDICATOR_OFF][1])));
+        g_variant_builder_add(&props, "{sv}", "toggle-state",
+                              g_variant_new_int32(!strcmp(indicator_choice(),
+                                                          indicator_choices[id - INDICATOR_OFF][1])));
         break;
     case 11: {
         const char *login = tray_menu ? json_object_get_string_member(tray_menu, "login") : NULL;
@@ -739,11 +747,18 @@ static void watcher_vanished(GDBusConnection *connection, const gchar *name, gpo
             "insomemo: no StatusNotifier tray host; daemon remains active (SIGTERM to quit)\n");
 }
 
+static void item_signal(const char *name) {
+    if (bus)
+        g_dbus_connection_emit_signal(bus, NULL, "/StatusNotifierItem",
+                                      "org.kde.StatusNotifierItem", name, NULL, NULL);
+}
+
 void native_update(const char *context, int paused, const char *error, const char *layouts_json,
                    const char *menu_json) {
-    gboolean changed = g_strcmp0(tray_context, context) || g_strcmp0(tray_error, error) ||
-                       tray_paused != paused || g_strcmp0(last_layouts, layouts_json) ||
-                       g_strcmp0(last_menu, menu_json);
+    gboolean context_changed = g_strcmp0(tray_context, context) != 0;
+    gboolean paused_changed = tray_paused != paused;
+    gboolean changed = context_changed || paused_changed || g_strcmp0(tray_error, error) ||
+                       g_strcmp0(last_layouts, layouts_json) || g_strcmp0(last_menu, menu_json);
     if (!changed)
         return;
     g_free(tray_context);
@@ -774,33 +789,30 @@ void native_update(const char *context, int paused, const char *error, const cha
         last_menu = g_strdup(menu_json);
     }
     revision++;
-    if (bus) {
-        const char *signals[] = {"NewTitle", "NewIcon", "NewToolTip"};
-        for (size_t i = 0; i < G_N_ELEMENTS(signals); i++)
-            g_dbus_connection_emit_signal(bus, NULL, "/StatusNotifierItem",
-                                          "org.kde.StatusNotifierItem", signals[i], NULL, NULL);
-        g_dbus_connection_emit_signal(bus, NULL, "/StatusNotifierItem",
-                                      "org.kde.StatusNotifierItem", "XAyatanaNewLabel",
-                                      g_variant_new("(ss)", "", ""), NULL);
-        g_dbus_connection_emit_signal(bus, NULL, "/MenuBar", "com.canonical.dbusmenu",
-                                      "LayoutUpdated", g_variant_new("(ui)", revision, 0), NULL);
+    if (!bus)
+        return;
+    // Signal only what changed: focus and title changes are frequent, and each
+    // NewIcon makes the tray host fetch and redraw the icon.
+    if (paused_changed) {
+        item_signal("NewTitle");
+        item_signal("NewIcon");
     }
+    if (context_changed || paused_changed)
+        item_signal("NewToolTip");
+    // The menu shows the context, pause state, error, layouts, and scopes.
+    g_dbus_connection_emit_signal(bus, NULL, "/MenuBar", "com.canonical.dbusmenu", "LayoutUpdated",
+                                  g_variant_new("(ui)", revision, 0), NULL);
 }
 
 void native_set_icon_theme(const char *path) {
     g_free(icon_theme_path);
     icon_theme_path = g_strdup(path);
 }
-static void emit_icon(void) {
-    if (bus)
-        g_dbus_connection_emit_signal(bus, NULL, "/StatusNotifierItem",
-                                      "org.kde.StatusNotifierItem", "NewIcon", NULL, NULL);
-}
 void native_set_icon_ink(int dark) {
     if (dark_ink == !!dark)
         return;
     dark_ink = !!dark;
-    emit_icon();
+    item_signal("NewIcon");
 }
 
 /* Hosts that draw the icon file as is need an ink that suits the panel; Rust
@@ -825,7 +837,8 @@ static void set_color_scheme(GVariant *value) {
         g_variant_unref(inner);
         inner = next;
     }
-    guint32 scheme = g_variant_is_of_type(inner, G_VARIANT_TYPE_UINT32) ? g_variant_get_uint32(inner) : 0;
+    guint32 scheme =
+        g_variant_is_of_type(inner, G_VARIANT_TYPE_UINT32) ? g_variant_get_uint32(inner) : 0;
     g_variant_unref(inner);
     if (scheme == color_scheme)
         return;
@@ -907,7 +920,7 @@ static void watch_appearance(void) {
 static gboolean badge_done(gpointer data) {
     (void)data;
     badge_timer = 0;
-    emit_icon();
+    item_signal("NewIcon");
     return G_SOURCE_REMOVE;
 }
 /* Swaps in the badged icon, like macOS; without Insomemo's icons there is
@@ -920,7 +933,7 @@ void native_indicate_switch(void) {
         g_source_remove(badge_timer);
     badge_timer = g_timeout_add(1200, badge_done, NULL);
     if (!showing)
-        emit_icon();
+        item_signal("NewIcon");
 }
 
 static gboolean save(gpointer data) {

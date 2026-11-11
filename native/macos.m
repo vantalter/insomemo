@@ -156,6 +156,9 @@ static NSArray *layoutList(void) {
 @property NSImage *bottomBadgeImage;
 @property NSTimer *badgeTimer;
 @property BOOL trusted;
+// Last site read from observedWindow and the title it was read under.
+@property NSString *siteTitle;
+@property NSString *siteHost;
 @property NSMenuItem *permissionItem;
 @end
 
@@ -294,7 +297,8 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 // window tracking when it changes.
 - (void)refreshTrust {
     BOOL trusted = AXIsProcessTrusted();
-    self.permissionItem.title = trusted ? @"Window / Tab Tracking" : @"Enable Window / Tab Tracking…";
+    self.permissionItem.title =
+        trusted ? @"Window / Tab Tracking" : @"Enable Window / Tab Tracking…";
     self.permissionItem.state = trusted ? NSControlStateValueOn : NSControlStateValueOff;
     if (trusted == self.trusted)
         return;
@@ -323,6 +327,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
         CFRelease(self.observedWindow);
         self.observedWindow = NULL;
     }
+    self.siteTitle = nil;
     if (self.observedApp) {
         CFRelease(self.observedApp);
         self.observedApp = NULL;
@@ -370,7 +375,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     NSString *title = @"";
     NSString *windowID = @"";
     NSString *site = @"";
-    NSString *identifier = self.activeApp.bundleIdentifier ?: self.activeApp.executableURL.path ?: self.activeApp.localizedName;
+    NSString *identifier = self.activeApp.bundleIdentifier
+                               ?: self.activeApp.executableURL.path
+                               ?: self.activeApp.localizedName;
     BOOL ghostty = [identifier isEqualToString:@"com.mitchellh.ghostty"];
     BOOL safari = [identifier isEqualToString:@"com.apple.Safari"] ||
                   [identifier isEqualToString:@"com.apple.SafariTechnologyPreview"];
@@ -393,6 +400,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                     CFRelease(self.observedWindow);
                 }
                 self.observedWindow = window;
+                self.siteTitle = nil;
                 if (self.observer)
                     AXObserverAddNotification(self.observer, window, kAXTitleChangedNotification,
                                               (__bridge void *)self);
@@ -410,8 +418,15 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
             if (ghostty)
                 windowID = [NSString stringWithFormat:@"%d:%lu", self.activeApp.processIdentifier,
                                                        (unsigned long)CFHash(self.observedWindow)];
-            else
+            else if ([title isEqualToString:self.siteTitle])
+                // Navigation changes the title, so focus moving within the
+                // same page keeps its site; Safari's lookup walks the AX tree.
+                site = self.siteHost;
+            else {
                 site = windowSite(self.observedWindow, safari);
+                self.siteTitle = title;
+                self.siteHost = site;
+            }
         }
     }
     switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String,
