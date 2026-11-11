@@ -31,7 +31,6 @@ with tempfile.TemporaryDirectory(prefix="insomemo-linux-") as directory:
         for _ in range(30):
             assert daemon.poll() is None, "Daemon exited during initialization"
             names = call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus.ListNames")
-            import re
             for name in re.findall(r"':\d+\.\d+'", names):
                 name = name.strip("'")
                 try:
@@ -47,6 +46,8 @@ with tempfile.TemporaryDirectory(prefix="insomemo-linux-") as directory:
         assert owner, "StatusNotifierItem was not registered"
         menu = call(owner, "/MenuBar", "com.canonical.dbusmenu.GetLayout", "0", "-1", "[]")
         assert "Force Default Layout" in menu and "Pause Auto-Switching" in menu
+        # Enlightenment opens the menu only when the root declares a submenu.
+        assert re.search(r"\(0, \{'children-display': <'submenu'>", menu), menu[:200]
         assert "Always Use" in menu and "Forget Learned Layout" in menu and "Remove All Pins" in menu and "Switch Indicator" in menu and "Launch at Login" in menu
         prop = lambda name: call(owner, "/StatusNotifierItem", "org.freedesktop.DBus.Properties.Get", "org.kde.StatusNotifierItem", name)
         assert "'insomemo-symbolic'" in prop("IconName")

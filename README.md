@@ -57,7 +57,7 @@ cargo build --release --locked
 ./target/release/insomemo
 ```
 
-The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. The tray shows the same stacked-keyboard icon as on macOS, as symbolic SVGs that KDE and GTK-based hosts such as Waybar recolour to match the panel; the app writes them to `$XDG_RUNTIME_DIR/insomemo/icons` (or `~/.cache/insomemo/icons`) at startup. There is no input-source label; the tooltip identifies Insomemo and the active context. Without a tray host, switching continues and SIGTERM quits cleanly.
+The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. The tray shows the same stacked-keyboard icon as on macOS, as symbolic SVGs that KDE and GTK-based hosts such as Waybar recolour to match the panel (hosts that do not recolour, such as Cinnamon and Enlightenment, show it light, for their default dark panels); the app writes them to `$XDG_RUNTIME_DIR/insomemo/icons` (or `~/.cache/insomemo/icons`) at startup. There is no input-source label; the tooltip identifies Insomemo and the active context. Without a tray host, switching continues and SIGTERM quits cleanly.
 
 Sway and Hyprland are detected before X11 from `SWAYSOCK` / `HYPRLAND_INSTANCE_SIGNATURE`. Other Wayland sessions fail explicitly; XWayland cannot provide complete context for native Wayland applications. Run the daemon inside the graphical session so it inherits compositor and D-Bus environment variables.
 

@@ -3,6 +3,8 @@
 //! Tray hosts recolour "-symbolic" icons to the panel's text colour: GTK by
 //! overriding fills, KDE through the `ColorScheme-Text` class. Every shape is
 //! therefore a plain fill; holes come from even-odd paths and clip paths.
+//! Hosts that draw the file as is, such as Cinnamon and Enlightenment, use the
+//! stylesheet's colour, a light one because their panels are dark by default.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 use crate::engine::IndicatorPosition;
 use std::path::{Path, PathBuf};
@@ -13,6 +15,8 @@ const DOT: f64 = CANVAS * 0.36;
 const GAP: f64 = CANVAS * 0.08;
 
 pub const PLAIN: &str = "insomemo-symbolic";
+/// Breeze's text colour on dark panels; see the module documentation.
+const FALLBACK: &str = "eff0f1";
 
 pub fn badged_name(position: IndicatorPosition) -> String {
     format!("insomemo-{}-symbolic", position.id())
@@ -82,7 +86,7 @@ pub fn svg(badge: Option<IndicatorPosition>) -> String {
         );
     }
     format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><style id="current-color-scheme">.ColorScheme-Text{{color:#232629}}</style><defs>{defs}</defs>{body}</svg>
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><style id="current-color-scheme">.ColorScheme-Text{{color:#{FALLBACK}}}</style><defs>{defs}</defs>{body}</svg>
 "#
     )
 }
@@ -144,6 +148,8 @@ mod tests {
             assert!(icon.starts_with("<svg ") && icon.trim_end().ends_with("</svg>"));
             assert_eq!(icon.matches("<path").count(), icon.matches("/>").count());
         }
+        // Hosts that do not recolour need an ink that shows on dark panels.
+        assert!(plain.contains(".ColorScheme-Text{color:#eff0f1}"));
         assert!(!plain.contains("id=\"ring\""));
         assert!(badged.contains("id=\"ring\""));
         // The bottom-right dot sits at y = 72 - 12.96.

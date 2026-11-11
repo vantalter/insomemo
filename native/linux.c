@@ -414,6 +414,8 @@ static GVariant *properties(int id) {
     gboolean enabled = TRUE;
     switch (id) {
     case 0:
+        // Enlightenment opens the menu on click only when the root says it has one.
+        g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
         break;
     case 1:
         allocated = g_strconcat("Active Context: ", tray_context ? tray_context : "—", NULL);
