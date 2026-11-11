@@ -65,12 +65,14 @@ X11 uses the core keyboard. On Wayland, the first Sway keyboard or the main Hypr
 
 ## Build and run on macOS
 
-Install Rust and Xcode Command Line Tools, then:
+Install Rust and Xcode, then:
 
 ```sh
 make app
 open "dist/Insomemo.app"
 ```
+
+The app is an Xcode project, [macos/Insomemo.xcodeproj](macos/Insomemo.xcodeproj), around the Rust crate: its first build phase, [build-rust.sh](macos/build-rust.sh), compiles the crate as a static library for each architecture being built, and a one-line Swift `main` calls the library's `insomemo_main`. The app version comes from `Cargo.toml`. `make app` runs `xcodebuild` and signs the result; in Xcode, **Product → Run** and **Product → Archive** work directly. To build in Xcode under another Apple team, choose it under the target's **Signing & Capabilities**.
 
 `make dmg` also packages the app as `dist/Insomemo.dmg`, the same drag-to-install disk image the releases publish.
 
@@ -86,7 +88,7 @@ The standalone executable is `target/release/insomemo`. To run it in a terminal:
 cargo run --release --locked
 ```
 
-`make app` builds for the host architecture; the app on the Releases page is universal (Apple Silicon and Intel). macOS 12 or newer is the deployment target.
+`make app` builds for the host architecture; `make notarize`, Xcode archives, and the app on the Releases page are universal (Apple Silicon and Intel), which needs both Rust targets: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`. macOS 12 or newer is the deployment target.
 
 ## Configuration
 
@@ -163,7 +165,7 @@ make test
 make check
 ```
 
-Tests cover context restoration, site and app fallback, pins and forgetting, switch-indicator settings, Linux tray icons, Launch at Login entries, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI runs `scripts/smoke-linux.py` under Xvfb and a session D-Bus to exercise the native tray and persistence.
+Tests cover context restoration, site and app fallback, pins and forgetting, switch-indicator settings, Linux tray icons, Launch at Login entries, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI also runs a smoke test, [tests/smoke_linux.rs](tests/smoke_linux.rs), that exercises the native tray and persistence under Xvfb and a session D-Bus; it is ignored by default and runs with `dbus-run-session -- xvfb-run -a cargo test --release --test smoke_linux -- --ignored`.
 
 Manual desktop acceptance checks:
 

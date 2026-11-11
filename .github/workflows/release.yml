@@ -32,14 +32,6 @@ jobs:
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
       - run: cargo test --locked
-      - name: Universal binary
-        run: |
-          cargo build --release --locked --target aarch64-apple-darwin
-          cargo build --release --locked --target x86_64-apple-darwin
-          mkdir -p target/universal
-          lipo -create -output target/universal/insomemo \
-            target/aarch64-apple-darwin/release/insomemo \
-            target/x86_64-apple-darwin/release/insomemo
       - name: Developer ID certificate and notary key
         id: signing
         env:
@@ -91,7 +83,7 @@ jobs:
           echo "signed=true" >> "$GITHUB_OUTPUT"
       - name: Sign, notarize, and package
         run: |
-          scripts/package-macos.sh target/universal/insomemo \
+          scripts/package-macos.sh \
             "Insomemo-${{ needs.version.outputs.version }}-macos-universal"
       - uses: actions/upload-artifact@v4
         with:
@@ -121,7 +113,7 @@ jobs:
       - run: cargo test --locked
       - run: cargo build --release --locked
       - name: Runtime smoke test
-        run: dbus-run-session -- xvfb-run -a python3 scripts/smoke-linux.py
+        run: dbus-run-session -- xvfb-run -a cargo test --release --locked --test smoke_linux -- --ignored
       - name: Tarball
         run: |
           name="insomemo-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}"

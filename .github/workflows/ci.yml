@@ -37,12 +37,12 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: cargo build --release --locked
-      - name: macOS bundle
+      - name: macOS app
         if: runner.os == 'macOS'
-        run: python3 scripts/bundle-macos.py
+        run: scripts/build-macos-app.sh
       - name: Linux runtime smoke test
         if: runner.os == 'Linux'
-        run: dbus-run-session -- xvfb-run -a python3 scripts/smoke-linux.py
+        run: dbus-run-session -- xvfb-run -a cargo test --release --locked --test smoke_linux -- --ignored
       - uses: actions/upload-artifact@v4
         with:
           name: insomemo-${{ matrix.os }}
