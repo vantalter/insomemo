@@ -73,7 +73,7 @@ fn menu_json(engine: &Engine, layouts: &[Layout], login: login::Status) -> Strin
             let label = match scope {
                 Scope::Tab => "This Tab or Window".to_owned(),
                 Scope::Site => format!("This Site ({})", context.map_or("", |c| &c.site)),
-                Scope::App => format!("This App ({})", context.map_or("", |c| &c.app)),
+                Scope::App => format!("This App ({})", context.map_or("", |c| app_name(&c.app))),
             };
             let pin_label = match &pin {
                 Some(layout) => format!("{label}: {}", name(layout)),
@@ -104,6 +104,30 @@ fn menu_json(engine: &Engine, layouts: &[Layout], login: login::Status) -> Strin
     .to_string()
 }
 
+/// A readable name for an app identifier: the last part of a macOS bundle
+/// identifier or of an executable path. Linux window classes pass through.
+fn app_name(id: &str) -> &str {
+    match id.rsplit_once('/') {
+        Some((_, file)) => file,
+        None => id.rsplit('.').next().unwrap_or(id),
+    }
+}
+
+/// The menu is as wide as its longest item, so the title is shortened.
+fn context_label(context: &engine::Context) -> String {
+    const TITLE: usize = 40;
+    let app = app_name(&context.app);
+    let mut title: String = context.title.chars().take(TITLE).collect();
+    if title.is_empty() {
+        return app.to_owned();
+    }
+    if context.title.chars().nth(TITLE).is_some() {
+        title.pop();
+        title.push('…');
+    }
+    format!("{app}: {title}")
+}
+
 fn update_tray() {
     APP.with(|slot| {
         let borrow = slot.borrow();
@@ -114,14 +138,7 @@ fn update_tray() {
         let context = engine
             .active
             .as_ref()
-            .map(|c| {
-                let title: String = c.title.chars().take(100).collect();
-                if title.is_empty() {
-                    c.app.clone()
-                } else {
-                    format!("{}: {title}", c.app)
-                }
-            })
+            .map(context_label)
             .unwrap_or_else(|| "No focused application".into());
         let layouts = serde_json::to_string(&app.layouts).unwrap();
         let menu = menu_json(engine, &app.layouts, app.login);
@@ -515,5 +532,35 @@ fn main() {
         #[cfg(target_os = "macos")]
         alert(&error);
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_labels_are_short_and_name_the_app() {
+        assert_eq!(app_name("com.apple.Safari"), "Safari");
+        assert_eq!(app_name("/opt/tools/editor"), "editor");
+        assert_eq!(app_name("Google-chrome"), "Google-chrome");
+        let mut context = engine::Context {
+            app: "com.apple.Safari".into(),
+            title: "vantalter/insomemo: An event-driven, context-aware keyboard layout switcher"
+                .into(),
+            key: String::new(),
+            window_id: String::new(),
+            session: false,
+            site: String::new(),
+            site_key: None,
+        };
+        assert_eq!(
+            context_label(&context),
+            "Safari: vantalter/insomemo: An event-driven, co…"
+        );
+        context.title = "Inbox".into();
+        assert_eq!(context_label(&context), "Safari: Inbox");
+        context.title.clear();
+        assert_eq!(context_label(&context), "Safari");
     }
 }
