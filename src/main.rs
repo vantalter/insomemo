@@ -2,6 +2,8 @@ mod config;
 mod engine;
 mod login;
 mod native;
+#[cfg(any(target_os = "linux", test))]
+mod panel;
 mod storage;
 #[cfg(any(target_os = "linux", test))]
 mod tray_svg;
@@ -178,6 +180,14 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
         });
         event("error", first, "");
         event("quit", "", "");
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    if kind == "appearance" {
+        // first: Cinnamon's theme name, "-" outside Cinnamon; second: color-scheme.
+        let theme = (first != "-").then_some(first);
+        let ink = panel::ink(theme, second.parse().unwrap_or(0));
+        unsafe { native::native_set_icon_ink((ink == tray_svg::Ink::Dark) as i32) }
         return;
     }
     #[cfg(target_os = "linux")]
