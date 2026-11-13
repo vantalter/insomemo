@@ -21,6 +21,7 @@ static Window active_window;
 static Atom net_active_window, net_wm_name, utf8_string;
 static int xkb_event;
 static guint save_timer;
+static guint update_timer;
 static guint revision = 1;
 static char *tray_context, *tray_error;
 static int tray_paused;
@@ -448,6 +449,21 @@ static GVariant *properties(int id) {
         enabled = scope_count() > 0;
         g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
         break;
+    case 12:
+        label = "Check for Updates…";
+        enabled = !tray_menu || !json_object_get_boolean_member(tray_menu, "update_checking");
+        break;
+    case 13:
+        label = "Automatically Check for Updates";
+        g_variant_builder_add(&props, "{sv}", "toggle-type", g_variant_new_string("checkmark"));
+        g_variant_builder_add(&props, "{sv}", "toggle-state", g_variant_new_int32(
+            tray_menu && json_object_get_boolean_member(tray_menu, "auto_updates")));
+        break;
+    case 14:
+        label = tray_menu && json_object_has_member(tray_menu, "update_label")
+                    ? json_object_get_string_member(tray_menu, "update_label") : "";
+        enabled = tray_menu && json_object_get_boolean_member(tray_menu, "update_available");
+        break;
     case 11: {
         const char *login = tray_menu ? json_object_get_string_member(tray_menu, "login") : NULL;
         label = "Launch at Login";
@@ -489,7 +505,7 @@ static GVariant *properties(int id) {
     g_variant_builder_add(&props, "{sv}", "label", g_variant_new_string(label));
     g_variant_builder_add(&props, "{sv}", "enabled", g_variant_new_boolean(enabled));
     g_variant_builder_add(&props, "{sv}", "visible",
-                          g_variant_new_boolean(id != 6 || (tray_error && *tray_error)));
+                          g_variant_new_boolean((id != 6 || (tray_error && *tray_error)) && (id != 14 || (label && *label))));
     g_free(allocated);
     return g_variant_builder_end(&props);
 }
@@ -500,7 +516,7 @@ static GVariant *menu_node(int id, int depth) {
     if (depth != 0) {
         int next = depth > 0 ? depth - 1 : -1;
         if (id == 0) {
-            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 11, 5};
+            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 11, 12, 13, 14, 5};
             for (size_t i = 0; i < G_N_ELEMENTS(ids); i++)
                 g_variant_builder_add(&children, "v", menu_node(ids[i], next));
         }
@@ -528,6 +544,12 @@ static void clicked(int id, const char *event) {
         emit("clear-pins", "", "");
     if (id == 11)
         emit("login-toggle", "", "");
+    if (id == 12)
+        emit("check-updates", "", "");
+    if (id == 13)
+        emit("auto-updates", "", "");
+    if (id == 14)
+        emit("open-updates", "", "");
     if ((id >= 200 && id < 300 && menu_scope(id - 200)) ||
         (id >= 300 && id < 400 && menu_scope(id - 300))) {
         JsonObject *scope = menu_scope(id % 100);
@@ -921,6 +943,46 @@ void native_indicate_switch(void) {
         item_signal("NewIcon");
 }
 
+typedef struct { char *kind; char *value; } UpdateResult;
+static gboolean deliver_update(gpointer data) {
+    UpdateResult *result = data;
+    emit("update-result", result->kind, result->value);
+    g_free(result->kind);
+    g_free(result->value);
+    g_free(result);
+    return G_SOURCE_REMOVE;
+}
+void native_post_update_result(const char *kind, const char *value) {
+    UpdateResult *result = g_new(UpdateResult, 1);
+    result->kind = g_strdup(kind);
+    result->value = g_strdup(value);
+    // Invoke only from the UI loop, including when a local test response arrives
+    // before g_main_loop_run has acquired the context.
+    GSource *source = g_idle_source_new();
+    g_source_set_callback(source, deliver_update, result, NULL);
+    g_source_attach(source, g_main_context_default());
+    g_source_unref(source);
+}
+static gboolean periodic_update(gpointer data) {
+    (void)data;
+    emit("check-updates", "", "");
+    return G_SOURCE_CONTINUE;
+}
+void native_set_update_checks(int enabled) {
+    if (update_timer) {
+        g_source_remove(update_timer);
+        update_timer = 0;
+    }
+    if (enabled)
+        update_timer = g_timeout_add_seconds(86400, periodic_update, NULL);
+}
+void native_open_updates_page(void) {
+    GError *error = NULL;
+    if (!g_app_info_launch_default_for_uri("https://github.com/vantalter/insomemo/releases", NULL, &error)) {
+        emit("error", error->message, "");
+        g_error_free(error);
+    }
+}
 static gboolean save(gpointer data) {
     (void)data;
     save_timer = 0;

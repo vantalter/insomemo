@@ -31,6 +31,9 @@ unsafe extern "C" {
     /// -1 queries, 0 disables, 1 enables. Returns -1 unsupported, 0 off, 1 on, 2 needs approval.
     #[cfg(target_os = "macos")]
     pub fn native_login_item(action: c_int) -> c_int;
+    pub fn native_post_update_result(kind: *const c_char, value: *const c_char);
+    pub fn native_set_update_checks(enabled: c_int);
+    pub fn native_open_updates_page();
     pub fn native_stop();
     fn native_hash(text: *const c_char, output: *mut c_char);
     #[cfg(target_os = "macos")]

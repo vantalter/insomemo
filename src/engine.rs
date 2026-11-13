@@ -22,6 +22,8 @@ pub struct State {
     /// are never evicted or cleared with the cache.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub pins: BTreeMap<String, String>,
+    #[serde(default)]
+    pub auto_check_updates: bool,
 }
 
 impl Default for State {
@@ -31,6 +33,7 @@ impl Default for State {
             entries: BTreeMap::new(),
             default_layout: None,
             pins: BTreeMap::new(),
+            auto_check_updates: false,
         }
     }
 }

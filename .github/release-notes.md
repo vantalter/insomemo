@@ -20,13 +20,13 @@ Insomemo remembers your keyboard layout per window, tab, and conversation on Lin
 **macOS:** open the `.dmg` and drag Insomemo onto the Applications shortcut. This build is not yet notarized, so macOS blocks the first launch. On macOS 15 or newer, open it once, then choose **Open Anyway** in System Settings → Privacy & Security. On macOS 12–14, right-click the app and choose **Open**. Alternatively, run `xattr -d com.apple.quarantine /Applications/Insomemo.app`. Then choose **Enable Window / Tab Tracking…** in its menu and grant Accessibility access. To start Insomemo automatically, choose **Launch at Login** once the app is in `/Applications`; the login item points at the app's current location.
 <!-- /unsigned -->
 
-**Debian, Ubuntu:** `sudo apt install ./insomemo_*_amd64.deb` (or `arm64`). **Fedora, openSUSE:** `sudo dnf install ./insomemo-*.x86_64.rpm` (or `zypper install`, or `aarch64`). The package manager installs GLib, json-glib, libX11, libxkbcommon, and GdkPixbuf, and Insomemo appears in your application menu. **Other distributions:** extract the tarball, install those libraries, and copy `insomemo` to `~/.local/bin`.
+**Debian, Ubuntu:** `sudo apt install ./insomemo_*_amd64.deb` (or `arm64`). **Fedora, openSUSE:** `sudo dnf install ./insomemo-*.x86_64.rpm` (or `zypper install`, or `aarch64`). The package manager installs GLib, json-glib, libX11, libxkbcommon, GdkPixbuf, and curl, and Insomemo appears in your application menu. **Other distributions:** extract the tarball, install those libraries and curl, and copy `insomemo` to `~/.local/bin`.
 
 Then choose **Launch at Login** in the tray menu; a StatusNotifier tray host is needed for the menu. On Sway and Hyprland, which ignore autostart entries, run `systemctl --user enable --now insomemo` instead (packages include the unit; for the tarball, copy `insomemo.service` to `~/.config/systemd/user/`). Build from source on systems older than glibc 2.35.
 
 ## Privacy
 
-Insomemo opens no network connections and does not read keystrokes. To confirm, run `lsof -nP -i -a -p "$(pgrep -x insomemo)"` while it runs: it prints nothing. See the README's Privacy section for what is read and stored.
+Insomemo does not read keystrokes. Its optional update check contacts GitHub only when requested or enabled in the tray menu; automatic checks are off by default. See the README's Privacy section for what is read and stored.
 
 ## Known limitations
 

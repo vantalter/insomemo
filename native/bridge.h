@@ -22,6 +22,12 @@ void native_set_icon_ink(int dark);
 /* macOS: -1 queries, 0 disables, 1 enables Launch at Login. Returns -1 when
  * unsupported, 0 off, 1 on, 2 awaiting approval in System Settings. */
 int native_login_item(int action);
+/* Deliver a background network result on the native UI loop. */
+void native_post_update_result(const char *kind, const char *value);
+/* Schedule/cancel the once-daily automatic check. */
+void native_set_update_checks(int enabled);
+/* Open the fixed project releases page in the default browser. */
+void native_open_updates_page(void);
 void native_stop(void);
 void native_hash(const char *text, char *output);
 void native_alert(const char *message); /* macOS only; blocks until dismissed */
