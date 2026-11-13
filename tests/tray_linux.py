@@ -107,10 +107,14 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
                     str(root / "tests/linux_icons.c"), str(root / "native/linux_icon.c"),
                     "-I" + directory, "-o", executable, *shlex.split(flags)], check=True)
     subprocess.run([executable, directory], check=True)
+    installed = subprocess.check_output([sys.argv[1], "--version"], text=True).strip().split()[-1]
+    major, minor, patch = map(int, installed.split("."))
+    current = f"v{installed}"
+    newer = f"v{major}.{minor}.{patch + 1}"
     fake_curl = Path(directory, "curl")
     fake_curl.write_text("#!/usr/bin/python3\nimport json\nfrom pathlib import Path\n"
                          "marker = Path(" + repr(str(Path(directory, "checked"))) + ")\n"
-                         "version = 'v0.2.10' if marker.exists() else 'v0.2.9'\n"
+                         f"version = {newer!r} if marker.exists() else {current!r}\n"
                          "marker.touch()\n"
                          "print(json.dumps([{'tag_name': version, 'prerelease': True}]))\n")
     fake_curl.chmod(0o755)
@@ -153,8 +157,8 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
         assert "Insomemo is up to date" not in menu()
         assert "Checking for updates" not in menu()
         click(12)
-        wait_for(lambda: "Version v0.2.10 available" in menu(), process)
-        wait_for(lambda: any("Version v0.2.10 is available" in n for n in notifications), process)
+        wait_for(lambda: f"Version {newer} available" in menu(), process)
+        wait_for(lambda: any(f"Version {newer} is available" in n for n in notifications), process)
         click(13)
         state_file = Path(directory, "state/state.json")
         wait_for(lambda: state_file.exists() and
