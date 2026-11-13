@@ -15,18 +15,18 @@ clang -fobjc-arc -framework AppKit scripts/generate-tray-keyboard.m -o /tmp/inso
 /tmp/insomemo-tray-generator assets/TrayTemplate.png
 ```
 
-To regenerate the 1024-pixel app-icon source:
+To regenerate the 1024-pixel source and every packaged app-icon size:
 
 ```sh
 clang -fobjc-arc -framework AppKit scripts/generate-app-icon.m -o /tmp/insomemo-app-icon-generator
-/tmp/insomemo-app-icon-generator assets/AppIcon.png
+/tmp/insomemo-app-icon-generator assets/AppIcon.png macos/Insomemo/Assets.xcassets/AppIcon.appiconset
 ```
 
-Resize `assets/AppIcon.png` with macOS `sips` to the pixel dimensions listed in [Contents.json](../macos/Insomemo/Assets.xcassets/AppIcon.appiconset/Contents.json) to update the app-icon slots.
+The generator reads [Contents.json](../macos/Insomemo/Assets.xcassets/AppIcon.appiconset/Contents.json) and renders each size directly from the vector geometry. Omitting the asset-set argument generates only the source PNG. Both generators share [keyboard-artwork.h](../scripts/keyboard-artwork.h), so the keyboard silhouette stays consistent. The app icon clips artwork to its inset tile; transparent key and badge cutouts reveal the gradient beneath.
 
 The side-arrow revision was also prepared with the built-in imagegen tool; its edit and refinement prompts are recorded in [tray-side-arrows-prompts.txt](tray-side-arrows-prompts.txt).
 
-App extraction prompt:
+Previous neon app extraction prompt:
 
 > Use case: background-extraction. Asset type: production macOS application icon for Insomemo. Edit the supplied new neon artwork. Remove only the solid black background outside the large purple rounded-square icon and replace that exterior with genuine transparency. Preserve the glossy finish, lighting, cyan left arrow, pink right arrow, all three stacked keyboard cards, keyboard glyph, exact shapes, colors, positions, and interior dark shading. Do not redesign, simplify, flatten, add text, or change the artwork. Keep the rounded square centered with its small exterior padding and a clean antialiased perimeter.
 
