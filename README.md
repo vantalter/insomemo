@@ -52,12 +52,12 @@ Linux builds are for x86_64 and arm64 and need glibc 2.35 or newer. Packages pul
 Development dependencies on Debian/Ubuntu:
 
 ```sh
-sudo apt install build-essential pkg-config libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev
+sudo apt install build-essential pkg-config libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev libgdk-pixbuf-2.0-dev
 cargo build --release --locked
 ./target/release/insomemo
 ```
 
-The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. The tray shows the same stacked-keyboard icon as on macOS, as symbolic SVGs that KDE and GTK-based hosts such as Waybar recolour to match the panel (for hosts that draw the file as is, such as Cinnamon and Enlightenment, Insomemo picks a light or dark version itself: on Cinnamon from the panel colours in the current Cinnamon theme, elsewhere from the desktop's light/dark preference, following changes to either); the app writes them to `$XDG_RUNTIME_DIR/insomemo/icons` (or `~/.cache/insomemo/icons`) at startup. There is no input-source label; the tooltip identifies Insomemo and the active context. Without a tray host, switching continues and SIGTERM quits cleanly.
+The executable dynamically links the platform's native libraries. A StatusNotifier-compatible tray host is needed for its menu, such as KDE's system tray or Waybar's tray module. The tray shows the same stacked-keyboard icon as on macOS. Cinnamon receives an absolute PNG path to avoid differences in symbolic SVG loading; every host can also use a D-Bus ARGB pixel fallback. KDE and GTK-based hosts such as Waybar receive symbolic SVGs that they recolour to match the panel. For PNGs and hosts that draw SVGs as is, Insomemo chooses light or dark ink from Cinnamon's panel theme or the desktop's light/dark preference, following changes to either. Icon files live in `$XDG_RUNTIME_DIR/insomemo/icons` (or `~/.cache/insomemo/icons`). There is no input-source label; the tooltip identifies Insomemo and the active context. Without a tray host, switching continues and SIGTERM quits cleanly.
 
 Sway and Hyprland are detected before X11 from `SWAYSOCK` / `HYPRLAND_INSTANCE_SIGNATURE`. Other Wayland sessions fail explicitly; XWayland cannot provide complete context for native Wayland applications. Run the daemon inside the graphical session so it inherits compositor and D-Bus environment variables.
 
@@ -166,6 +166,8 @@ make check
 ```
 
 Tests cover context restoration, site and app fallback, pins and forgetting, switch-indicator settings, Linux tray icons, Launch at Login entries, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI also runs a smoke test, [tests/smoke_linux.rs](tests/smoke_linux.rs), that exercises the native tray and persistence under Xvfb and a session D-Bus; it is ignored by default and runs with `dbus-run-session -- xvfb-run -a cargo test --release --test smoke_linux -- --ignored`.
+
+Linux CI also runs [tests/tray_linux.py](tests/tray_linux.py), which checks PNG decoding, SNI pixel byte order, both icon colours, badge changes, pause, and registration when a tray host starts late or restarts. It requires the normal Linux build dependencies plus `python3-gi` and `gir1.2-gdkpixbuf-2.0`. Run it with `dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/tray_linux.py target/release/insomemo`.
 
 Manual desktop acceptance checks:
 

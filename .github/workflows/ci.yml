@@ -32,7 +32,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Linux native dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev pkg-config xvfb x11-xkb-utils dbus-x11
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev libgdk-pixbuf-2.0-dev pkg-config xvfb x11-xkb-utils dbus-x11 python3-gi gir1.2-gdkpixbuf-2.0
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
@@ -42,7 +42,9 @@ jobs:
         run: scripts/build-macos-app.sh
       - name: Linux runtime smoke test
         if: runner.os == 'Linux'
-        run: dbus-run-session -- xvfb-run -a cargo test --release --locked --test smoke_linux -- --ignored
+        run: |
+          dbus-run-session -- xvfb-run -a cargo test --release --locked --test smoke_linux -- --ignored
+          dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/tray_linux.py target/release/insomemo
       - uses: actions/upload-artifact@v4
         with:
           name: insomemo-${{ matrix.os }}

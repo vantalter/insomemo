@@ -37,6 +37,7 @@ overrides:
       - libjson-glib-1.0-0
       - libx11-6
       - libxkbcommon0
+      - libgdk-pixbuf-2.0-0
   # Shared-library names rather than package names, which differ between
   # Fedora and openSUSE. "(64bit)" is RPM's marker for 64-bit libraries.
   rpm:
@@ -47,3 +48,4 @@ overrides:
       - libjson-glib-1.0.so.0()(64bit)
       - libX11.so.6()(64bit)
       - libxkbcommon.so.0()(64bit)
+      - libgdk_pixbuf-2.0.so.0()(64bit)

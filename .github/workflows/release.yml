@@ -109,11 +109,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Linux native dependencies
-        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev pkg-config xvfb x11-xkb-utils dbus-x11
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev libgdk-pixbuf-2.0-dev pkg-config xvfb x11-xkb-utils dbus-x11 python3-gi gir1.2-gdkpixbuf-2.0
       - run: cargo test --locked
       - run: cargo build --release --locked
       - name: Runtime smoke test
-        run: dbus-run-session -- xvfb-run -a cargo test --release --locked --test smoke_linux -- --ignored
+        run: |
+          dbus-run-session -- xvfb-run -a cargo test --release --locked --test smoke_linux -- --ignored
+          dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/tray_linux.py target/release/insomemo
       - name: Tarball
         run: |
           name="insomemo-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}"
