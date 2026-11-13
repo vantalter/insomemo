@@ -16,9 +16,8 @@ pub enum Status {
 impl Status {
     pub fn label(&self) -> &str {
         match self {
-            Self::Idle => "",
+            Self::Idle | Self::Current => "",
             Self::Checking => "Checking for updates…",
-            Self::Current => "Insomemo is up to date",
             Self::Available(_) => "Update available — Open Releases…",
             Self::Failed(_) => "Update check failed",
         }
