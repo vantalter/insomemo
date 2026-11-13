@@ -147,6 +147,7 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
 
         assert "Check for Updates" in menu()
         assert "Automatically Check for Updates" in menu()
+        assert menu().count("separator") == 3
         click(12)
         wait_for(lambda: any("Insomemo is up to date" in n for n in notifications), process)
         assert "Insomemo is up to date" not in menu()

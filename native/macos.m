@@ -239,12 +239,16 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                    keyEquivalent:@""];
     self.removePinsItem.target = self;
     self.removePinsItem.enabled = NO;
+    [menu addItem:[NSMenuItem separatorItem]];
+    self.permissionItem = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
+                                          action:@selector(permission:)
+                                   keyEquivalent:@""];
+    self.permissionItem.target = self;
     self.loginItem = [menu addItemWithTitle:@"Launch at Login"
                                      action:@selector(toggleLogin:)
                               keyEquivalent:@""];
     self.loginItem.target = self;
     self.loginItem.hidden = YES;
-    [menu addItem:[NSMenuItem separatorItem]];
     self.checkUpdatesItem = [menu addItemWithTitle:@"Check for Updates…"
                                                action:@selector(checkUpdates:)
                                         keyEquivalent:@""];
@@ -256,10 +260,6 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     self.updateResultItem = [menu addItemWithTitle:@"" action:@selector(openUpdates:) keyEquivalent:@""];
     self.updateResultItem.target = self;
     self.updateResultItem.hidden = YES;
-    self.permissionItem = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
-                                          action:@selector(permission:)
-                                   keyEquivalent:@""];
-    self.permissionItem.target = self;
     [menu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *quit = [menu addItemWithTitle:@"Quit" action:@selector(quit:) keyEquivalent:@"q"];
     quit.target = self;

@@ -416,6 +416,12 @@ static GVariant *properties(int id) {
         // Enlightenment opens the menu on click only when the root says it has one.
         g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
         break;
+    case 10:
+    case 15:
+    case 16:
+        g_variant_builder_add(&props, "{sv}", "type", g_variant_new_string("separator"));
+        enabled = FALSE;
+        break;
     case 1:
         allocated = g_strconcat("Active Context: ", tray_context ? tray_context : "—", NULL);
         label = allocated;
@@ -516,7 +522,7 @@ static GVariant *menu_node(int id, int depth) {
     if (depth != 0) {
         int next = depth > 0 ? depth - 1 : -1;
         if (id == 0) {
-            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 11, 12, 13, 14, 5};
+            int ids[] = {1, 6, 10, 2, 7, 8, 3, 4, 9, 15, 11, 12, 13, 14, 16, 5};
             for (size_t i = 0; i < G_N_ELEMENTS(ids); i++)
                 g_variant_builder_add(&children, "v", menu_node(ids[i], next));
         }
