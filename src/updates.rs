@@ -16,9 +16,8 @@ pub enum Status {
 impl Status {
     pub fn label(&self) -> &str {
         match self {
-            Self::Idle => "",
+            Self::Idle | Self::Current => "",
             Self::Checking => "Checking for updates…",
-            Self::Current => "Insomemo is up to date",
             Self::Available(_) => "Update available — Open Releases…",
             Self::Failed(_) => "Update check failed",
         }
@@ -32,6 +31,16 @@ impl Status {
     }
     pub fn can_open(&self) -> bool {
         matches!(self, Self::Available(_))
+    }
+    pub fn manual_message(&self) -> String {
+        match self {
+            Self::Current => "Insomemo is up to date.".into(),
+            Self::Available(version) => {
+                format!("Version {version} is available. Open the tray menu to view releases.")
+            }
+            Self::Failed(reason) => format!("Could not check for updates: {reason}."),
+            _ => String::new(),
+        }
     }
 }
 

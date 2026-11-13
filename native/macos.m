@@ -239,12 +239,16 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                    keyEquivalent:@""];
     self.removePinsItem.target = self;
     self.removePinsItem.enabled = NO;
+    [menu addItem:[NSMenuItem separatorItem]];
+    self.permissionItem = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
+                                          action:@selector(permission:)
+                                   keyEquivalent:@""];
+    self.permissionItem.target = self;
     self.loginItem = [menu addItemWithTitle:@"Launch at Login"
                                      action:@selector(toggleLogin:)
                               keyEquivalent:@""];
     self.loginItem.target = self;
     self.loginItem.hidden = YES;
-    [menu addItem:[NSMenuItem separatorItem]];
     self.checkUpdatesItem = [menu addItemWithTitle:@"Check for Updates…"
                                                action:@selector(checkUpdates:)
                                         keyEquivalent:@""];
@@ -256,10 +260,6 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     self.updateResultItem = [menu addItemWithTitle:@"" action:@selector(openUpdates:) keyEquivalent:@""];
     self.updateResultItem.target = self;
     self.updateResultItem.hidden = YES;
-    self.permissionItem = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
-                                          action:@selector(permission:)
-                                   keyEquivalent:@""];
-    self.permissionItem.target = self;
     [menu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *quit = [menu addItemWithTitle:@"Quit" action:@selector(quit:) keyEquivalent:@"q"];
     quit.target = self;
@@ -458,7 +458,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 - (void)toggleLogin:(id)sender {
     emit(@"login-toggle", @"", @"");
 }
-- (void)checkUpdates:(id)sender { emit(@"check-updates", @"", @""); }
+- (void)checkUpdates:(id)sender { emit(@"check-updates-manual", @"", @""); }
 - (void)toggleAutoUpdates:(id)sender { emit(@"auto-updates", @"", @""); }
 - (void)openUpdates:(id)sender { emit(@"open-updates", @"", @""); }
 - (void)removePins:(id)sender {
@@ -671,6 +671,15 @@ void native_post_update_result(const char *kind, const char *value) {
     dispatch_async(dispatch_get_main_queue(), ^{
         emit(@"update-result", resultKind, resultValue);
     });
+}
+void native_show_update_result(const char *message) {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.alertStyle = NSAlertStyleInformational;
+    alert.messageText = @"Update Check";
+    alert.informativeText = @(message);
+    [alert addButtonWithTitle:@"OK"];
+    [NSApp activateIgnoringOtherApps:YES];
+    [alert runModal];
 }
 void native_set_update_checks(int enabled) {
     [delegate.updateTimer invalidate];

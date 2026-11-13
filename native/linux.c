@@ -416,6 +416,12 @@ static GVariant *properties(int id) {
         // Enlightenment opens the menu on click only when the root says it has one.
         g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
         break;
+    case 10:
+    case 15:
+    case 16:
+        g_variant_builder_add(&props, "{sv}", "type", g_variant_new_string("separator"));
+        enabled = FALSE;
+        break;
     case 1:
         allocated = g_strconcat("Active Context: ", tray_context ? tray_context : "—", NULL);
         label = allocated;
@@ -516,7 +522,7 @@ static GVariant *menu_node(int id, int depth) {
     if (depth != 0) {
         int next = depth > 0 ? depth - 1 : -1;
         if (id == 0) {
-            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 11, 12, 13, 14, 5};
+            int ids[] = {1, 6, 10, 2, 7, 8, 3, 4, 9, 15, 11, 12, 13, 14, 16, 5};
             for (size_t i = 0; i < G_N_ELEMENTS(ids); i++)
                 g_variant_builder_add(&children, "v", menu_node(ids[i], next));
         }
@@ -545,7 +551,7 @@ static void clicked(int id, const char *event) {
     if (id == 11)
         emit("login-toggle", "", "");
     if (id == 12)
-        emit("check-updates", "", "");
+        emit("check-updates-manual", "", "");
     if (id == 13)
         emit("auto-updates", "", "");
     if (id == 14)
@@ -962,6 +968,17 @@ void native_post_update_result(const char *kind, const char *value) {
     g_source_set_callback(source, deliver_update, result, NULL);
     g_source_attach(source, g_main_context_default());
     g_source_unref(source);
+}
+void native_show_update_result(const char *message) {
+    if (!bus)
+        return;
+    g_dbus_connection_call(bus, "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                           "org.freedesktop.Notifications", "Notify",
+                           g_variant_new("(susss@as@a{sv}i)", "Insomemo", 0, "insomemo",
+                                         "Update Check", message, g_variant_new_strv(NULL, 0),
+                                         g_variant_new_array(G_VARIANT_TYPE("{sv}"), NULL, 0), 5000),
+                           G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NO_AUTO_START, -1,
+                           NULL, NULL, NULL);
 }
 static gboolean periodic_update(gpointer data) {
     (void)data;

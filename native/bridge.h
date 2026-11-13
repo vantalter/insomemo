@@ -24,6 +24,8 @@ void native_set_icon_ink(int dark);
 int native_login_item(int action);
 /* Deliver a background network result on the native UI loop. */
 void native_post_update_result(const char *kind, const char *value);
+/* Show the result of a manual check after its menu closes. */
+void native_show_update_result(const char *message);
 /* Schedule/cancel the once-daily automatic check. */
 void native_set_update_checks(int enabled);
 /* Open the fixed project releases page in the default browser. */

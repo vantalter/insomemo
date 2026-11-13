@@ -32,6 +32,7 @@ unsafe extern "C" {
     #[cfg(target_os = "macos")]
     pub fn native_login_item(action: c_int) -> c_int;
     pub fn native_post_update_result(kind: *const c_char, value: *const c_char);
+    pub fn native_show_update_result(message: *const c_char);
     pub fn native_set_update_checks(enabled: c_int);
     pub fn native_open_updates_page();
     pub fn native_stop();
