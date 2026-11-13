@@ -11,7 +11,7 @@ mod tray_svg;
 mod wayland;
 
 use config::Config;
-use engine::{Engine, IndicatorPosition, Scope};
+use engine::{Engine, Scope};
 use native::{Layout, cstring};
 use std::{
     cell::RefCell,
@@ -96,8 +96,6 @@ fn menu_json(engine: &Engine, layouts: &[Layout], login: login::Status) -> Strin
     serde_json::json!({
         "pin_title": format!("Always Use {current} In"),
         "pins": engine.pin_count(),
-        "indicator": engine.state.show_switch_indicator,
-        "indicator_position": engine.state.switch_indicator_position.id(),
         "login": login.id(),
         "scopes": scopes,
     })
@@ -319,19 +317,6 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
                 }
                 None
             }
-            "indicator" => {
-                let position = match first {
-                    "top-right" => Some(Some(IndicatorPosition::TopRight)),
-                    "bottom-right" => Some(Some(IndicatorPosition::BottomRight)),
-                    "off" => Some(None),
-                    _ => None,
-                };
-                if let Some(position) = position {
-                    engine.set_switch_indicator(position);
-                    save = true;
-                }
-                None
-            }
             "warning" => {
                 app.warning = first.into();
                 None
@@ -356,7 +341,7 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
                     }
                     // Only focus-driven restores; menu actions are the user's own switch.
                     let automatic = kind == "context" || kind == "pause";
-                    if automatic && app.engine.state.show_switch_indicator {
+                    if automatic {
                         unsafe { native::native_indicate_switch() }
                     }
                 } else {

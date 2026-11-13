@@ -141,7 +141,6 @@ fn tray_pause_default_debounce_clear_and_shutdown() {
         "Always Use",
         "Forget Learned Layout",
         "Remove All Pins",
-        "Switch Indicator",
         "Launch at Login",
     ] {
         assert!(layout.contains(item), "menu lacks {item}");
@@ -156,7 +155,7 @@ fn tray_pause_default_debounce_clear_and_shutdown() {
     let icons = Path::new(icons.split('\'').nth(1).unwrap());
     for name in [
         "insomemo-symbolic",
-        "insomemo-bottom-right-symbolic",
+        "insomemo-top-right-symbolic",
         "insomemo-dark-symbolic",
     ] {
         assert!(icons.join(format!("{name}.svg")).exists(), "{name}");

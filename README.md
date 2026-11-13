@@ -122,13 +122,13 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 4. App fallbacks, site contexts, and title contexts share a 200-entry LRU budget. Least recently used entries are evicted, including app fallbacks. Pins are never evicted. Access order updates in memory and is persisted with the next state write.
 5. Changes save atomically after two seconds of inactivity. Quit, SIGINT, and SIGTERM flush pending changes. A corrupt/unknown-version state file is preserved and startup fails with an explanation. Unknown fields written by a newer build are ignored, so downgrading keeps your learned layouts. A file lock prevents two instances from modifying the same state directory.
 
-`state.json` contains layout IDs, app IDs, title and site hashes, pins, the switch-indicator settings, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
+`state.json` contains layout IDs, app IDs, title and site hashes, pins, and recency counters, not raw titles. The active title is shown locally in the tray. Files are private to the user. Hashes are identifiers, not encryption; predictable titles can still be guessed.
 
 **Pause Auto-Switching** freezes both switching and learning. Resuming restores the focused context. **Force Default Layout** selects a layout immediately, sets the global fallback, and updates the current context and its app fallback. **Clear Cache** removes learned contexts and the tray-selected default; it retains a default explicitly specified in config. Clear/default actions use the same debounced persistence as manual layout changes.
 
 **Always Use … In** pins the current layout to *This Tab or Window*, *This Site* (macOS browsers), or *This App*. A pin beats every learned layout: the tab pin first, then the site, then the app. Clicking a checked pin removes it. Manual changes in a pinned context are still learned, so removing the pin restores learned behaviour. **Forget Learned Layout** removes the learned layout for one of those scopes without touching pins. Pins survive **Clear Cache**; **Remove All Pins** clears them. Pins on Ghostty tabs last only for the session, like the tabs' learned layouts.
 
-**Switch Indicator** (on by default) badges the tray icon with a dot for about a second whenever Insomemo itself switches the layout, so you can tell an automatic restore from your own change. Switching tabs quickly keeps one badge showing rather than flashing. The badge is an instant icon change with no animation, and the **Switch Indicator** submenu chooses **Off**, **Top Right** (the default), or **Bottom Right** for the dot. The settings are saved in `state.json`.
+Automatic layout restores briefly badge the tray icon with a dot in its top-right corner. Switching tabs quickly keeps one badge showing rather than flashing. The badge is an instant icon change with no animation.
 
 Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Most apps must expose tab changes through their window title; Ghostty's native macOS tabs are tracked by accessibility window identity. Insomemo does not inspect browser content or capture keystrokes.
 
@@ -156,7 +156,7 @@ cat ~/.config/insomemo/state.json
 
 ## Performance and validation
 
-The macOS main run loop and Linux GLib event loop sleep waiting for OS notifications, IPC sockets, D-Bus, or signals. The only timers are one-shot: the two-second save debounce and, when the switch indicator is on, the 1.2-second badge. Linux drains Xlib's internal event queue through a custom GLib source, including events buffered by synchronous X calls. Compositor requests have bounded response sizes and two-second timeouts.
+The macOS main run loop and Linux GLib event loop sleep waiting for OS notifications, IPC sockets, D-Bus, or signals. The only timers are one-shot: the two-second save debounce and, the 1.2-second badge after an automatic switch. Linux drains Xlib's internal event queue through a custom GLib source, including events buffered by synchronous X calls. Compositor requests have bounded response sizes and two-second timeouts.
 
 The macOS release binary is about 480 KiB. Idle on macOS (Apple Silicon), Insomemo's physical memory footprint is about **12 MB** and its CPU use rounds to 0%, measured with `footprint` and `ps`. Its resident size (RSS) reads higher, around 75 MiB, because RSS also counts system framework pages shared with other apps. Linux memory has not been measured yet.
 
@@ -165,7 +165,7 @@ make test
 make check
 ```
 
-Tests cover context restoration, site and app fallback, pins and forgetting, switch-indicator settings, Linux tray icons, Launch at Login entries, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI also runs a smoke test, [tests/smoke_linux.rs](tests/smoke_linux.rs), that exercises the native tray and persistence under Xvfb and a session D-Bus; it is ignored by default and runs with `dbus-run-session -- xvfb-run -a cargo test --release --test smoke_linux -- --ignored`.
+Tests cover context restoration, site and app fallback, pins and forgetting, Linux tray icons, Launch at Login entries, pause/resume, failed selections, normalization and hashing, bounded LRU state, atomic storage and locking, and fragmented compositor IPC. CI builds on macOS and Linux for arm64 and x86_64. Linux CI also runs a smoke test, [tests/smoke_linux.rs](tests/smoke_linux.rs), that exercises the native tray and persistence under Xvfb and a session D-Bus; it is ignored by default and runs with `dbus-run-session -- xvfb-run -a cargo test --release --test smoke_linux -- --ignored`.
 
 Linux CI also runs [tests/tray_linux.py](tests/tray_linux.py), which checks PNG decoding, SNI pixel byte order, both icon colours, badge changes, pause, and registration when a tray host starts late or restarts. It requires the normal Linux build dependencies plus `python3-gi` and `gir1.2-gdkpixbuf-2.0`. Run it with `dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/tray_linux.py target/release/insomemo`.
 

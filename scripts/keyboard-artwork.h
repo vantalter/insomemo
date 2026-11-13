@@ -29,6 +29,8 @@ static void roundedOutline(CGContextRef context, CGFloat x, CGFloat y, CGFloat w
 // Draw into a transparent layer: the keys punch holes through the front card.
 static void drawKeyboard(CGContextRef context) {
     CGContextSaveGState(context);
+    CGContextTranslateCTM(context, keyboardCanvas, 0);
+    CGContextScaleCTM(context, -1, 1);
     CGContextSetShouldAntialias(context, true);
     CGContextSetFillColorWithColor(context, NSColor.whiteColor.CGColor);
     CGContextSetStrokeColorWithColor(context, NSColor.whiteColor.CGColor);

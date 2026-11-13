@@ -28,7 +28,7 @@ static JsonArray *tray_layouts;
 static char *last_layouts;
 static JsonObject *tray_menu; /* pin/forget scopes, labelled by Rust */
 static char *last_menu;
-static guint badge_timer;       /* nonzero while the switch indicator shows */
+static guint badge_timer;       /* nonzero while the automatic-switch badge shows */
 static char *icon_theme_path;   /* Insomemo's symbolic icons; NULL uses the theme */
 static int dark_ink;            /* dark-ink icons, for light panels */
 static gboolean cinnamon_session;
@@ -404,21 +404,6 @@ static JsonObject *menu_scope(int index) {
                : NULL;
 }
 
-/* Switch Indicator submenu: labels and the values sent to Rust. */
-enum { INDICATOR_OFF = 600 };
-static const char *const indicator_choices[][2] = {
-    {"Off", "off"}, {"Top Right", "top-right"}, {"Bottom Right", "bottom-right"}};
-static const char *indicator_position(void) {
-    return tray_menu && json_object_has_member(tray_menu, "indicator_position")
-               ? json_object_get_string_member(tray_menu, "indicator_position")
-               : "top-right";
-}
-static const char *indicator_choice(void) {
-    return tray_menu && json_object_get_boolean_member(tray_menu, "indicator")
-               ? indicator_position()
-               : "off";
-}
-
 static GVariant *properties(int id) {
     GVariantBuilder props;
     g_variant_builder_init(&props, G_VARIANT_TYPE("a{sv}"));
@@ -463,20 +448,6 @@ static GVariant *properties(int id) {
         enabled = scope_count() > 0;
         g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
         break;
-    case 10:
-        label = "Switch Indicator";
-        g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
-        break;
-    case INDICATOR_OFF:
-    case INDICATOR_OFF + 1:
-    case INDICATOR_OFF + 2: {
-        const char *const *choice = indicator_choices[id - INDICATOR_OFF];
-        label = choice[0];
-        g_variant_builder_add(&props, "{sv}", "toggle-type", g_variant_new_string("radio"));
-        g_variant_builder_add(&props, "{sv}", "toggle-state",
-                              g_variant_new_int32(!strcmp(indicator_choice(), choice[1])));
-        break;
-    }
     case 11: {
         const char *login = tray_menu ? json_object_get_string_member(tray_menu, "login") : NULL;
         label = "Launch at Login";
@@ -529,13 +500,10 @@ static GVariant *menu_node(int id, int depth) {
     if (depth != 0) {
         int next = depth > 0 ? depth - 1 : -1;
         if (id == 0) {
-            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 10, 11, 5};
+            int ids[] = {1, 6, 2, 7, 8, 3, 4, 9, 11, 5};
             for (size_t i = 0; i < G_N_ELEMENTS(ids); i++)
                 g_variant_builder_add(&children, "v", menu_node(ids[i], next));
         }
-        if (id == 10)
-            for (int i = 0; i < 3; i++)
-                g_variant_builder_add(&children, "v", menu_node(INDICATOR_OFF + i, next));
         if (id == 7 || id == 8)
             for (guint i = 0; i < scope_count(); i++)
                 g_variant_builder_add(&children, "v",
@@ -558,8 +526,6 @@ static void clicked(int id, const char *event) {
         emit("quit", "", "");
     if (id == 9)
         emit("clear-pins", "", "");
-    if (id >= INDICATOR_OFF && id < INDICATOR_OFF + 3)
-        emit("indicator", indicator_choices[id - INDICATOR_OFF][1], "");
     if (id == 11)
         emit("login-toggle", "", "");
     if ((id >= 200 && id < 300 && menu_scope(id - 200)) ||
@@ -661,15 +627,11 @@ static void method_call(GDBusConnection *connection, const gchar *sender, const 
 }
 
 static int icon_state(void) {
-    if (tray_paused)
-        return 3;
-    if (!badge_timer || !strcmp(indicator_choice(), "off"))
-        return 0;
-    return !strcmp(indicator_position(), "bottom-right") ? 2 : 1;
+    return tray_paused ? 2 : badge_timer ? 1 : 0;
 }
 
 /* Mirrors the macOS template icon; symbolic names follow the panel's colour.
- * The names match tray_svg::name: insomemo[-dark][-<corner>]-symbolic. */
+ * The names match tray_svg::name: insomemo[-dark][-top-right]-symbolic. */
 static const char *icon_name(void) {
     static char name[64];
     if (cinnamon_session) {
@@ -683,8 +645,8 @@ static const char *icon_name(void) {
         return "media-playback-pause-symbolic";
     if (!icon_theme_path)
         return "input-keyboard-symbolic";
-    g_snprintf(name, sizeof name, "insomemo%s%s%s-symbolic", dark_ink ? "-dark" : "",
-               badge_timer ? "-" : "", badge_timer ? indicator_position() : "");
+    g_snprintf(name, sizeof name, "insomemo%s%s-symbolic", dark_ink ? "-dark" : "",
+               badge_timer ? "-top-right" : "");
     return name;
 }
 
@@ -808,10 +770,6 @@ void native_update(const char *context, int paused, const char *error, const cha
         g_object_unref(parser);
         g_free(last_menu);
         last_menu = g_strdup(menu_json);
-    }
-    if (badge_timer && !strcmp(indicator_choice(), "off")) {
-        g_source_remove(badge_timer);
-        badge_timer = 0;
     }
     revision++;
     if (!bus)
