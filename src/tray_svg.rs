@@ -7,7 +7,6 @@
 //! stylesheet's colour, so each icon comes in a light and a dark ink; `panel`
 //! chooses between them.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
-use crate::engine::IndicatorPosition;
 use std::path::{Path, PathBuf};
 
 const CANVAS: f64 = 72.0;
@@ -33,17 +32,13 @@ impl Ink {
     }
 }
 
-const BADGES: [Option<IndicatorPosition>; 3] = [
-    None,
-    Some(IndicatorPosition::TopRight),
-    Some(IndicatorPosition::BottomRight),
-];
+const BADGES: [bool; 2] = [false, true];
 
-/// `insomemo[-dark][-<corner>]-symbolic`; `icon_name` in native/linux.c builds
+/// `insomemo[-dark][-top-right]-symbolic`; `icon_name` in native/linux.c builds
 /// the same names.
-pub fn name(ink: Ink, badge: Option<IndicatorPosition>) -> String {
+pub fn name(ink: Ink, badge: bool) -> String {
     let ink = if ink == Ink::Dark { "-dark" } else { "" };
-    let badge = badge.map_or(String::new(), |position| format!("-{}", position.id()));
+    let badge = if badge { "-top-right" } else { "" };
     format!("insomemo{ink}{badge}-symbolic")
 }
 
@@ -70,7 +65,7 @@ fn outline(x: f64, y: f64, w: f64, h: f64, r: f64) -> String {
         + &rounded(x + 2.5, y + 2.5, w - 5.0, h - 5.0, r - 2.5)
 }
 
-pub fn svg(badge: Option<IndicatorPosition>, ink: Ink) -> String {
+pub fn svg(badge: bool, ink: Ink) -> String {
     let canvas = rounded(0.0, 0.0, CANVAS, CANVAS, 0.0);
     let front = rounded(7.0, 23.0, 50.0, 42.0, 8.0);
     let mut holes = String::new();
@@ -94,12 +89,10 @@ pub fn svg(badge: Option<IndicatorPosition>, ink: Ink) -> String {
     let mut body = format!(
         r#"<g clip-path="url(#behind)"><path {paint} d="{back}"/><path {paint} d="{middle}"/></g><path {paint} d="{front}{holes}"/>"#
     );
-    if let Some(position) = badge {
+    body = format!(r#"<g transform="translate(72 0) scale(-1 1)">{body}</g>"#);
+    if badge {
         let cx = CANVAS - DOT / 2.0;
-        let cy = match position {
-            IndicatorPosition::TopRight => DOT / 2.0,
-            IndicatorPosition::BottomRight => CANVAS - DOT / 2.0,
-        };
+        let cy = DOT / 2.0;
         // A transparent ring separates the dot from the cards, as on macOS.
         let ring = circle(cx, cy, DOT / 2.0 + GAP);
         defs += &format!(
@@ -160,30 +153,27 @@ mod tests {
 
     #[test]
     fn icons_are_well_formed_and_only_badges_have_a_dot() {
-        let plain = svg(None, Ink::Light);
-        let badged = svg(Some(IndicatorPosition::BottomRight), Ink::Light);
+        let plain = svg(false, Ink::Light);
+        let badged = svg(true, Ink::Light);
         for icon in [&plain, &badged] {
             assert!(icon.starts_with("<svg ") && icon.trim_end().ends_with("</svg>"));
             assert_eq!(icon.matches("<path").count(), icon.matches("/>").count());
         }
         assert!(!plain.contains("id=\"ring\""));
         assert!(badged.contains("id=\"ring\""));
-        // The bottom-right dot sits at y = 72 - 12.96.
-        assert!(badged.contains(" 59.04a12.96"));
-        assert_ne!(svg(Some(IndicatorPosition::TopRight), Ink::Light), badged);
+        // The top-right dot stays in place when the keyboard is mirrored.
+        assert!(badged.contains(" 12.96a12.96"));
+        assert!(plain.contains("translate(72 0) scale(-1 1)"));
     }
 
     #[test]
     fn inks_differ_only_in_the_colour_hosts_fall_back_to() {
-        let light = svg(None, Ink::Light);
-        let dark = svg(None, Ink::Dark);
+        let light = svg(false, Ink::Light);
+        let dark = svg(false, Ink::Dark);
         assert!(light.contains(".ColorScheme-Text{color:#eff0f1}"));
         assert_eq!(light.replace("eff0f1", "232629"), dark);
-        assert_eq!(name(Ink::Light, None), "insomemo-symbolic");
-        assert_eq!(
-            name(Ink::Dark, Some(IndicatorPosition::TopRight)),
-            "insomemo-dark-top-right-symbolic"
-        );
+        assert_eq!(name(Ink::Light, false), "insomemo-symbolic");
+        assert_eq!(name(Ink::Dark, true), "insomemo-dark-top-right-symbolic");
     }
 
     #[test]
@@ -191,9 +181,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("insomemo-icons-{}", std::process::id()));
         write_icons(&dir).unwrap();
         assert!(dir.join("insomemo-symbolic.svg").exists());
-        assert!(dir.join("insomemo-dark-bottom-right-symbolic.svg").exists());
+        assert!(dir.join("insomemo-dark-top-right-symbolic.svg").exists());
         assert!(
-            dir.join("hicolor/scalable/apps/insomemo-bottom-right-symbolic.svg")
+            dir.join("hicolor/scalable/apps/insomemo-top-right-symbolic.svg")
                 .exists()
         );
         assert!(dir.join("hicolor/index.theme").exists());

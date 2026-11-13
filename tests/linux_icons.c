@@ -14,23 +14,24 @@ int main(int argc, char **argv) {
     assert(argc == 2);
     native_set_icon_theme(argv[1]);
     cinnamon_session = TRUE;
-    const char *top = "{\"indicator\":true,\"indicator_position\":\"top-right\"}";
-    const char *bottom = "{\"indicator\":true,\"indicator_position\":\"bottom-right\"}";
-    const char *off = "{\"indicator\":false,\"indicator_position\":\"bottom-right\"}";
-    native_update("context", 0, "", "[]", top);
+    native_update("context", 0, "", "[]", "{}");
     char *plain = g_strdup(icon_name());
     native_indicate_switch();
     assert(icon_state() == 1 && badge_timer);
     char *badged = g_strdup(icon_name());
     assert(strcmp(plain, badged));
-    native_update("context", 0, "", "[]", bottom);
+    assert(strstr(badged, "insomemo-raster-0-1.png"));
+    native_update("context", 1, "", "[]", "{}");
     assert(icon_state() == 2 && strcmp(badged, icon_name()));
-    native_update("context", 0, "", "[]", off);
-    assert(!badge_timer && icon_state() == 0 && !strcmp(plain, icon_name()));
+    native_update("context", 0, "", "[]", "{}");
+    assert(icon_state() == 1 && !strcmp(badged, icon_name()));
+    g_source_remove(badge_timer);
+    badge_timer = 0;
+    assert(icon_state() == 0 && !strcmp(plain, icon_name()));
     g_free(plain);
     g_free(badged);
     for (int dark = 0; dark <= 1; dark++)
-        for (int state = 0; state < 4; state++) {
+        for (int state = 0; state < 3; state++) {
             GVariant *pixmap = linux_icon_pixmap(dark, state);
             assert(g_variant_n_children(pixmap) == 1);
             GVariant *entry = g_variant_get_child_value(pixmap, 0), *bytes;
@@ -47,8 +48,8 @@ int main(int argc, char **argv) {
                 assert(data[i + 3] == (dark ? 41 : 241));
             }
             assert(visible > 0 && visible < (unsigned)(w * h));
-            if (state == 1 || state == 2) {
-                int x = w * 82 / 100, y = state == 1 ? h * 18 / 100 : h * 82 / 100;
+            if (state == 1) {
+                int x = w * 82 / 100, y = h * 18 / 100;
                 assert(data[(y * w + x) * 4] == 255); // badge center
             }
             assert(linux_icon_file(argv[1], dark, state));
@@ -56,6 +57,6 @@ int main(int argc, char **argv) {
             g_variant_unref(entry);
             g_variant_unref(pixmap);
         }
-    puts("PASS: both inks, all raster states, badge move and disable");
+    puts("PASS: both inks, all raster states, fixed top-right badge and pause");
     return 0;
 }

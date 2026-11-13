@@ -2,9 +2,9 @@
 #include "tray_icon.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
 
-static GdkPixbuf *icons[2][4];
-static GVariant *pixmaps[2][4];
-static char *filenames[2][4];
+static GdkPixbuf *icons[2][3];
+static GVariant *pixmaps[2][3];
+static char *filenames[2][3];
 
 static GdkPixbuf *icon(int dark, int state) {
     if (icons[dark][state])
@@ -31,15 +31,15 @@ static GdkPixbuf *icon(int dark, int state) {
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             guchar *p = pixels + y * stride + x * 4;
-            if (state == 3) {
+            if (state == 2) {
                 p[3] = y >= height / 5 && y < height * 4 / 5 &&
                                ((x >= width / 4 && x < width * 5 / 12) ||
                                 (x >= width * 7 / 12 && x < width * 3 / 4))
                            ? 255 : 0;
-            } else if (state) {
+            } else if (state == 1) {
                 // Supersample the badge edges; the surrounding ring is clear.
                 double radius = width * 0.18, outer = radius + width * 0.08;
-                double cx = width - radius, cy = state == 1 ? radius : height - radius;
+                double cx = width - radius, cy = radius;
                 unsigned alpha = 0;
                 for (int sy = 0; sy < 4; sy++)
                     for (int sx = 0; sx < 4; sx++) {
