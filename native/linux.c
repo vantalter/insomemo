@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "bridge.h"
+#include "linux_icon.h"
 #include <X11/XKBlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
@@ -30,6 +31,7 @@ static char *last_menu;
 static guint badge_timer;       /* nonzero while the switch indicator shows */
 static char *icon_theme_path;   /* Insomemo's symbolic icons; NULL uses the theme */
 static int dark_ink;            /* dark-ink icons, for light panels */
+static gboolean cinnamon_session;
 static char *cinnamon_theme;    /* Cinnamon's theme name; NULL outside Cinnamon */
 static guint32 color_scheme;    /* portal preference: 0 none, 1 dark, 2 light */
 static gboolean quit_requested;
@@ -658,10 +660,25 @@ static void method_call(GDBusConnection *connection, const gchar *sender, const 
             invocation, "org.freedesktop.DBus.Error.UnknownMethod", "Unknown method");
 }
 
+static int icon_state(void) {
+    if (tray_paused)
+        return 3;
+    if (!badge_timer || !strcmp(indicator_choice(), "off"))
+        return 0;
+    return !strcmp(indicator_position(), "bottom-right") ? 2 : 1;
+}
+
 /* Mirrors the macOS template icon; symbolic names follow the panel's colour.
  * The names match tray_svg::name: insomemo[-dark][-<corner>]-symbolic. */
 static const char *icon_name(void) {
     static char name[64];
+    if (cinnamon_session) {
+        const char *path = linux_icon_file(icon_theme_path, dark_ink, icon_state());
+        if (path)
+            return path;
+        // Force the host's pixmap fallback if no PNG could be written.
+        return "";
+    }
     if (tray_paused)
         return "media-playback-pause-symbolic";
     if (!icon_theme_path)
@@ -704,10 +721,12 @@ static GVariant *get_property(GDBusConnection *connection, const gchar *sender, 
         return g_variant_new_int32(0);
     if (!strcmp(name, "IconName"))
         return g_variant_new_string(icon_name());
+    if (!strcmp(name, "IconPixmap"))
+        return linux_icon_pixmap(dark_ink, icon_state());
     if (g_str_has_suffix(name, "Pixmap"))
         return empty_pixmap();
     if (!strcmp(name, "ToolTip"))
-        return g_variant_new("(s@a(iiay)ss)", icon_name(), empty_pixmap(),
+        return g_variant_new("(s@a(iiay)ss)", icon_name(), linux_icon_pixmap(dark_ink, icon_state()),
                              tray_paused ? "Insomemo (Paused)" : "Insomemo",
                              tray_context ? tray_context : "");
     if (!strcmp(name, "Menu"))
@@ -756,6 +775,7 @@ static void item_signal(const char *name) {
 
 void native_update(const char *context, int paused, const char *error, const char *layouts_json,
                    const char *menu_json) {
+    int previous_icon = icon_state();
     gboolean context_changed = g_strcmp0(tray_context, context) != 0;
     gboolean paused_changed = tray_paused != paused;
     gboolean changed = context_changed || paused_changed || g_strcmp0(tray_error, error) ||
@@ -789,15 +809,19 @@ void native_update(const char *context, int paused, const char *error, const cha
         g_free(last_menu);
         last_menu = g_strdup(menu_json);
     }
+    if (badge_timer && !strcmp(indicator_choice(), "off")) {
+        g_source_remove(badge_timer);
+        badge_timer = 0;
+    }
     revision++;
     if (!bus)
         return;
     // Signal only what changed: focus and title changes are frequent, and each
     // NewIcon makes the tray host fetch and redraw the icon.
-    if (paused_changed) {
+    if (paused_changed)
         item_signal("NewTitle");
+    if (previous_icon != icon_state())
         item_signal("NewIcon");
-    }
     if (context_changed || paused_changed)
         item_signal("NewToolTip");
     // The menu shows the context, pause state, error, layouts, and scopes.
@@ -893,10 +917,11 @@ static void watch_appearance(void) {
     // Theme icons are the host's own; only Insomemo's icons have an ink.
     if (!icon_theme_path)
         return;
-    const char *desktop = g_getenv("XDG_CURRENT_DESKTOP");
+    if (cinnamon_session)
+        cinnamon_theme = g_strdup("");
     GSettingsSchemaSource *source = g_settings_schema_source_get_default();
     GSettingsSchema *schema =
-        desktop && strstr(desktop, "Cinnamon") && source
+        cinnamon_session && source
             ? g_settings_schema_source_lookup(source, "org.cinnamon.theme", TRUE)
             : NULL;
     if (schema) {
@@ -904,6 +929,7 @@ static void watch_appearance(void) {
             GSettings *settings = g_settings_new_full(schema, NULL, NULL);
             // The settings object lives as long as the process, for its signal.
             g_signal_connect(settings, "changed::name", G_CALLBACK(cinnamon_theme_changed), NULL);
+            g_free(cinnamon_theme);
             cinnamon_theme = g_settings_get_string(settings, "name");
         }
         g_settings_schema_unref(schema);
@@ -970,6 +996,10 @@ static gboolean wayland_ready(gint fd, GIOCondition condition, gpointer data) {
 }
 
 int native_run(int event_fd) {
+    const char *desktop = g_getenv("XDG_CURRENT_DESKTOP");
+    char *lower = desktop ? g_ascii_strdown(desktop, -1) : NULL;
+    cinnamon_session = lower && strstr(lower, "cinnamon");
+    g_free(lower);
     loop = g_main_loop_new(NULL, FALSE);
     GError *error = NULL;
     bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);

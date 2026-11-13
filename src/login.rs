@@ -103,6 +103,9 @@ fn remove_entry(path: &Path) -> std::io::Result<()> {
 fn entry(executable: &Path) -> String {
     let mut quoted = String::from('"');
     for c in executable.to_string_lossy().chars() {
+        if c == '%' {
+            quoted.push('%'); // Escape desktop-entry field codes, even inside quotes.
+        }
         if matches!(c, '"' | '`' | '$' | '\\') {
             quoted.push('\\');
         }
@@ -128,6 +131,12 @@ mod tests {
             "{text}"
         );
         assert!(text.starts_with("[Desktop Entry]\n"));
+    }
+
+    #[test]
+    fn exec_line_escapes_percent_field_codes() {
+        let text = entry(Path::new("/home/user/100%/insomemo%f"));
+        assert!(text.contains("Exec=\"/home/user/100%%/insomemo%%f\"\n"));
     }
 
     #[test]
