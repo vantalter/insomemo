@@ -7,6 +7,7 @@ mod panel;
 mod storage;
 #[cfg(any(target_os = "linux", test))]
 mod tray_svg;
+mod updates;
 #[cfg(any(target_os = "linux", test))]
 mod wayland;
 
@@ -30,6 +31,7 @@ struct App {
     save_failed: bool,
     fatal_error: Option<String>,
     login: login::Status,
+    update_status: updates::Status,
 }
 
 thread_local! {
@@ -58,7 +60,12 @@ fn select_layout(layout: &str) -> bool {
 }
 
 /// Pin/forget menu contents, labelled here so both trays read the same text.
-fn menu_json(engine: &Engine, layouts: &[Layout], login: login::Status) -> String {
+fn menu_json(
+    engine: &Engine,
+    layouts: &[Layout],
+    login: login::Status,
+    update: &updates::Status,
+) -> String {
     let name = |id: &str| {
         layouts
             .iter()
@@ -97,6 +104,10 @@ fn menu_json(engine: &Engine, layouts: &[Layout], login: login::Status) -> Strin
         "pin_title": format!("Always Use {current} In"),
         "pins": engine.pin_count(),
         "login": login.id(),
+        "auto_updates": engine.state.auto_check_updates,
+        "update_label": update.detail(),
+        "update_available": update.can_open(),
+        "update_checking": matches!(update, updates::Status::Checking),
         "scopes": scopes,
     })
     .to_string()
@@ -139,7 +150,7 @@ fn update_tray() {
             .map(context_label)
             .unwrap_or_else(|| "No focused application".into());
         let layouts = serde_json::to_string(&app.layouts).unwrap();
-        let menu = menu_json(engine, &app.layouts, app.login);
+        let menu = menu_json(engine, &app.layouts, app.login, &app.update_status);
         let message = if app.error.is_empty() {
             &app.warning
         } else {
@@ -182,11 +193,62 @@ fn flush() {
     });
 }
 
+fn start_update_check() {
+    let should_start = APP.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(app) = slot.as_mut() else {
+            return false;
+        };
+        if app.update_status == updates::Status::Checking {
+            return false;
+        }
+        app.update_status = updates::Status::Checking;
+        true
+    });
+    if !should_start {
+        return;
+    }
+    update_tray();
+    std::thread::spawn(|| {
+        let (kind, value) = match updates::fetch() {
+            Ok(updates::Status::Current) => ("current", String::new()),
+            Ok(updates::Status::Available(version)) => ("available", version),
+            Err(error) => ("failed", error),
+            _ => ("failed", "Invalid update result".into()),
+        };
+        unsafe {
+            native::native_post_update_result(cstring(kind).as_ptr(), cstring(&value).as_ptr())
+        };
+    });
+}
+
 fn event(kind: &str, first: &str, second: &str) {
     event_with_context(kind, first, second, "", "");
 }
 
 fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, site: &str) {
+    if kind == "update-result" {
+        APP.with(|slot| {
+            if let Some(app) = slot.borrow_mut().as_mut() {
+                app.update_status = match first {
+                    "current" => updates::Status::Current,
+                    "available" => updates::Status::Available(second.to_owned()),
+                    _ => updates::Status::Failed(second.to_owned()),
+                };
+            }
+        });
+        update_tray();
+        return;
+    }
+    if kind == "check-updates" {
+        start_update_check();
+        return;
+    }
+    if kind == "open-updates" {
+        unsafe { native::native_open_updates_page() };
+        return;
+    }
+
     if kind == "fatal" {
         APP.with(|slot| {
             if let Some(app) = slot.borrow_mut().as_mut() {
@@ -306,6 +368,12 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
                 save = true;
                 None
             }
+            "auto-updates" => {
+                engine.state.auto_check_updates = !engine.state.auto_check_updates;
+                engine.dirty = true;
+                save = true;
+                None
+            }
             "login-toggle" => {
                 match login::set(app.login != login::Status::On) {
                     Ok(status) => app.login = status,
@@ -356,6 +424,17 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
         }
     }
     update_tray();
+    if kind == "ready" || kind == "auto-updates" {
+        let enabled = APP.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .is_some_and(|app| app.engine.state.auto_check_updates)
+        });
+        unsafe { native::native_set_update_checks(enabled as c_int) };
+        if enabled {
+            start_update_check();
+        }
+    }
 }
 
 /// # Safety
@@ -469,6 +548,7 @@ fn run() -> Result<(), String> {
             save_failed: false,
             fatal_error: None,
             login: login::Status::Unsupported,
+            update_status: updates::Status::Idle,
         })
     });
     #[cfg(target_os = "linux")]

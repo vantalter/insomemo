@@ -3,6 +3,7 @@
 Run: dbus-run-session -- xvfb-run -a python3 tests/tray_linux.py BINARY
 Requires python3-gi and gir1.2-gdkpixbuf-2.0, only for this test.
 """
+import json
 import os
 import shlex
 from pathlib import Path
@@ -88,7 +89,13 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
                     str(root / "tests/linux_icons.c"), str(root / "native/linux_icon.c"),
                     "-I" + directory, "-o", executable, *shlex.split(flags)], check=True)
     subprocess.run([executable, directory], check=True)
+    fake_curl = Path(directory, "curl")
+    fake_curl.write_text("#!/usr/bin/python3\nprint(" + repr(json.dumps([
+        {"tag_name": "v0.2.10", "prerelease": True}
+    ])) + ")\n")
+    fake_curl.chmod(0o755)
     env = os.environ.copy()
+    env["PATH"] = directory + os.pathsep + env["PATH"]
     for key in ("WAYLAND_DISPLAY", "SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE"):
         env.pop(key, None)
     env.update(XDG_SESSION_TYPE="x11", XDG_CURRENT_DESKTOP="X-Cinnamon",
@@ -108,8 +115,24 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
         initial = properties()
         assert initial["Status"] == "Active"
         normal = pixels(initial)
-        call(owner, "/MenuBar", "com.canonical.dbusmenu", "Event",
-             GLib.Variant("(isvu)", (2, "clicked", GLib.Variant("i", 0), 0)))
+        def menu():
+            return str(call(owner, "/MenuBar", "com.canonical.dbusmenu", "GetLayout",
+                            GLib.Variant("(iias)", (0, -1, []))))
+
+        def click(item):
+            call(owner, "/MenuBar", "com.canonical.dbusmenu", "Event",
+                 GLib.Variant("(isvu)", (item, "clicked", GLib.Variant("i", 0), 0)))
+
+        assert "Check for Updates" in menu()
+        assert "Automatically Check for Updates" in menu()
+        click(12)
+        wait_for(lambda: "Version v0.2.10 available" in menu(), process)
+        click(13)
+        state_file = Path(directory, "state/state.json")
+        wait_for(lambda: state_file.exists() and
+                 json.loads(state_file.read_text()).get("auto_check_updates") is True, process)
+
+        click(2)
         paused = properties()
         assert paused["Title"] == "Insomemo (Paused)"
         assert pixels(paused) != normal, "pause did not change the fallback icon"
@@ -119,7 +142,7 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
         wait_for(lambda: len(registrations) == 2, process)
         assert registrations[1] == registrations[0]
         assert pixels(properties()) == pixels(paused)
-        print("PASS: Cinnamon PNG, visible ARGB fallback, pause, late host, and host restart")
+        print("PASS: tray pixels, update menu, saved automatic preference, pause and host restart")
     finally:
         process.terminate()
         process.wait(timeout=5)

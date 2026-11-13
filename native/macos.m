@@ -149,6 +149,10 @@ static NSArray *layoutList(void) {
 @property NSMenuItem *removePinsItem;
 @property NSString *menuJSON;
 @property NSMenuItem *loginItem;
+@property NSMenuItem *checkUpdatesItem;
+@property NSMenuItem *autoUpdatesItem;
+@property NSMenuItem *updateResultItem;
+@property NSTimer *updateTimer;
 @property NSImage *trayImage;
 @property NSImage *badgeImage;
 @property NSTimer *badgeTimer;
@@ -240,6 +244,18 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                               keyEquivalent:@""];
     self.loginItem.target = self;
     self.loginItem.hidden = YES;
+    [menu addItem:[NSMenuItem separatorItem]];
+    self.checkUpdatesItem = [menu addItemWithTitle:@"Check for Updates…"
+                                               action:@selector(checkUpdates:)
+                                        keyEquivalent:@""];
+    self.checkUpdatesItem.target = self;
+    self.autoUpdatesItem = [menu addItemWithTitle:@"Automatically Check for Updates"
+                                              action:@selector(toggleAutoUpdates:)
+                                       keyEquivalent:@""];
+    self.autoUpdatesItem.target = self;
+    self.updateResultItem = [menu addItemWithTitle:@"" action:@selector(openUpdates:) keyEquivalent:@""];
+    self.updateResultItem.target = self;
+    self.updateResultItem.hidden = YES;
     self.permissionItem = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
                                           action:@selector(permission:)
                                    keyEquivalent:@""];
@@ -442,6 +458,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 - (void)toggleLogin:(id)sender {
     emit(@"login-toggle", @"", @"");
 }
+- (void)checkUpdates:(id)sender { emit(@"check-updates", @"", @""); }
+- (void)toggleAutoUpdates:(id)sender { emit(@"auto-updates", @"", @""); }
+- (void)openUpdates:(id)sender { emit(@"open-updates", @"", @""); }
 - (void)removePins:(id)sender {
     emit(@"clear-pins", @"", @"");
 }
@@ -550,6 +569,13 @@ static void updateScopeMenus(NSString *json) {
         pins ? [NSString stringWithFormat:@"Remove All Pins (%lu)", (unsigned long)pins]
              : @"Remove All Pins";
     delegate.removePinsItem.enabled = pins > 0;
+    delegate.autoUpdatesItem.state = [menu[@"auto_updates"] boolValue]
+                                         ? NSControlStateValueOn : NSControlStateValueOff;
+    delegate.checkUpdatesItem.enabled = ![menu[@"update_checking"] boolValue];
+    NSString *updateLabel = menu[@"update_label"] ?: @"";
+    delegate.updateResultItem.title = updateLabel;
+    delegate.updateResultItem.hidden = !updateLabel.length;
+    delegate.updateResultItem.enabled = [menu[@"update_available"] boolValue];
     NSString *login = menu[@"login"];
     delegate.loginItem.hidden = !login || [login isEqualToString:@"unsupported"];
     delegate.loginItem.state =
@@ -639,6 +665,25 @@ void native_indicate_switch(void) {
                                                            delegate.trayImage;
                                                    }];
     [[NSRunLoop mainRunLoop] addTimer:delegate.badgeTimer forMode:NSRunLoopCommonModes];
+}
+void native_post_update_result(const char *kind, const char *value) {
+    NSString *resultKind = @(kind), *resultValue = @(value);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        emit(@"update-result", resultKind, resultValue);
+    });
+}
+void native_set_update_checks(int enabled) {
+    [delegate.updateTimer invalidate];
+    delegate.updateTimer = nil;
+    if (!enabled) return;
+    delegate.updateTimer = [NSTimer timerWithTimeInterval:86400 repeats:YES block:^(NSTimer *timer) {
+        (void)timer;
+        emit(@"check-updates", @"", @"");
+    }];
+    [[NSRunLoop mainRunLoop] addTimer:delegate.updateTimer forMode:NSRunLoopCommonModes];
+}
+void native_open_updates_page(void) {
+    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"https://github.com/vantalter/insomemo/releases"]];
 }
 void native_schedule_save(void) {
     [delegate.saveTimer invalidate];

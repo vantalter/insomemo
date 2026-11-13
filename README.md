@@ -4,7 +4,7 @@
 
 Switch to Ukrainian in one Slack conversation and English in a terminal tab. Insomemo learns each choice as you make it and restores it whenever you return to that window, tab, or chat. There are no rules to write: the layout you pick in a context is the layout that context gets next time.
 
-It is a small Rust daemon (under 500 KiB, about 12 MB of memory on macOS) with a native tray on both platforms. No webview, telemetry, ads, network service, or polling loop.
+It is a small Rust daemon (under 500 KiB, about 12 MB of memory on macOS) with a native tray on both platforms. No webview, telemetry, ads, server, or polling loop.
 
 ## Why Insomemo
 
@@ -12,7 +12,7 @@ It is a small Rust daemon (under 500 KiB, about 12 MB of memory on macOS) with a
 - **Learns per window, not just per app.** For terminals, chat apps, and browsers, each window or tab title is its own context. On macOS, browsers also learn per site, so a new page on a site you have used starts in that site's layout. Ghostty's native macOS tabs are tracked by window identity, so tabs with the same title stay separate.
 - **Zero configuration.** Change the layout once in a context and it is remembered. The first choice in an app also becomes that app's fallback for contexts it has not seen yet.
 - **Rules when you want them.** Pin the current layout to a tab, a site, or a whole app from the tray, and forget any learned layout you no longer want.
-- **Private by design.** Titles and sites are stored only as truncated SHA-256 hashes in a user-private state file. Insomemo opens no network connections and never reads keystrokes or page content. You can [check this yourself](#privacy).
+- **Private by design.** Titles and sites are stored only as truncated SHA-256 hashes in a user-private state file. Network access is limited to optional update checks; Insomemo never reads keystrokes or page content. You can [check this yourself](#privacy).
 
 ### Compared with alternatives
 
@@ -52,7 +52,7 @@ Linux builds are for x86_64 and arm64 and need glibc 2.35 or newer. Packages pul
 Development dependencies on Debian/Ubuntu:
 
 ```sh
-sudo apt install build-essential pkg-config libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev libgdk-pixbuf-2.0-dev
+sudo apt install build-essential pkg-config libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev libgdk-pixbuf-2.0-dev curl
 cargo build --release --locked
 ./target/release/insomemo
 ```
@@ -128,6 +128,8 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 
 **Always Use … In** pins the current layout to *This Tab or Window*, *This Site* (macOS browsers), or *This App*. A pin beats every learned layout: the tab pin first, then the site, then the app. Clicking a checked pin removes it. Manual changes in a pinned context are still learned, so removing the pin restores learned behaviour. **Forget Learned Layout** removes the learned layout for one of those scopes without touching pins. Pins survive **Clear Cache**; **Remove All Pins** clears them. Pins on Ghostty tabs last only for the session, like the tabs' learned layouts.
 
+The tray menu has **Check for Updates…** and **Automatically Check for Updates**. Manual checks and enabled daily checks fetch published releases from GitHub, including this project’s `0.x` prereleases. A newer version appears in the menu with a link to the releases page. Automatic checks are off by default; the choice is saved in `state.json`. The check does not install anything.
+
 Automatic layout restores briefly badge the tray icon with a dot in its top-right corner. Switching tabs quickly keeps one badge showing rather than flashing. The badge is an instant icon change with no animation.
 
 Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Most apps must expose tab changes through their window title; Ghostty's native macOS tabs are tracked by accessibility window identity. Insomemo does not inspect browser content or capture keystrokes.
@@ -139,16 +141,16 @@ What Insomemo reads, in memory only:
 - **macOS:** the frontmost app's bundle ID, its focused window's title, Ghostty's window identity, and, for web pages, the page address (through Accessibility). Only the host, such as `docs.google.com`, is used, and only as a hash. It asks for Accessibility, not Input Monitoring, so macOS does not let it read keystrokes.
 - **Linux:** the active window's class and title (X11 properties or Sway/Hyprland IPC).
 
-What it stores: `state.json` (see [How memory works](#how-memory-works)) and your optional `config.json`, in a directory only you can open. Besides those, it writes only its own tray icons on Linux (`$XDG_RUNTIME_DIR/insomemo/icons`) and, if you turn on **Launch at Login**, a login item on macOS or `~/.config/autostart/insomemo.desktop` on Linux. Nothing is sent anywhere.
+What it stores: `state.json` (see [How memory works](#how-memory-works)) and your optional `config.json`, in a directory only you can open. Besides those, it writes only its own tray icons on Linux (`$XDG_RUNTIME_DIR/insomemo/icons`) and, if you turn on **Launch at Login**, a login item on macOS or `~/.config/autostart/insomemo.desktop` on Linux. Update checks connect to `api.github.com` only when requested or when automatic checks are enabled. They send the standard HTTPS request and no saved layouts, titles, or state.
 
 Ways to check:
 
 ```sh
-# No network sockets: prints nothing while Insomemo runs (macOS and Linux).
-lsof -nP -i -a -p "$(pgrep -x insomemo)"
-# Linux: only local Unix sockets (D-Bus, X11, compositor IPC).
+# Optional checks run curl as a short-lived child process.
+ps -ax -o command | grep '[c]url.*api.github.com'
+# Linux: local Unix sockets (D-Bus, X11, compositor IPC).
 ss -xp | grep insomemo
-# No networking libraries among the dependencies.
+# No network crate is linked.
 cargo tree --edges normal,build
 # Everything it remembers (~/.config/input-switcher if you upgraded from Input Switcher).
 cat ~/.config/insomemo/state.json
@@ -156,7 +158,7 @@ cat ~/.config/insomemo/state.json
 
 ## Performance and validation
 
-The macOS main run loop and Linux GLib event loop sleep waiting for OS notifications, IPC sockets, D-Bus, or signals. The only timers are one-shot: the two-second save debounce and, the 1.2-second badge after an automatic switch. Linux drains Xlib's internal event queue through a custom GLib source, including events buffered by synchronous X calls. Compositor requests have bounded response sizes and two-second timeouts.
+The macOS main run loop and Linux GLib event loop sleep waiting for OS notifications, IPC sockets, D-Bus, or signals. The two-second save debounce and 1.2-second badge use one-shot timers. Automatic update checks use a daily timer while enabled; requests run on a worker thread. Linux drains Xlib's internal event queue through a custom GLib source, including events buffered by synchronous X calls. Compositor requests have bounded response sizes and two-second timeouts.
 
 The macOS release binary is about 480 KiB. Idle on macOS (Apple Silicon), Insomemo's physical memory footprint is about **12 MB** and its CPU use rounds to 0%, measured with `footprint` and `ps`. Its resident size (RSS) reads higher, around 75 MiB, because RSS also counts system framework pages shared with other apps. Linux memory has not been measured yet.
 
