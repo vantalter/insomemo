@@ -128,7 +128,7 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 
 **Always Use … In** pins the current layout to *This Tab or Window*, *This Site* (macOS browsers), or *This App*. A pin beats every learned layout: the tab pin first, then the site, then the app. Clicking a checked pin removes it. Manual changes in a pinned context are still learned, so removing the pin restores learned behaviour. **Forget Learned Layout** removes the learned layout for one of those scopes without touching pins. Pins survive **Clear Cache**; **Remove All Pins** clears them. Pins on Ghostty tabs last only for the session, like the tabs' learned layouts.
 
-The tray menu has **Check for Updates…** and **Automatically Check for Updates**. Manual checks and enabled daily checks fetch published releases from GitHub, including this project’s `0.x` prereleases. A newer version appears in the menu with a link to the releases page. Automatic checks are off by default; the choice is saved in `state.json`. The check does not install anything.
+The tray menu has **Check for Updates…** and **Automatically Check for Updates**. Manual checks show the result in an alert on macOS or a desktop notification on Linux. Manual checks and enabled daily checks fetch published releases from GitHub, including this project’s `0.x` prereleases. A newer version appears in the menu with a link to the releases page. Automatic checks are off by default; the choice is saved in `state.json`. The check does not install anything.
 
 Automatic layout restores briefly badge the tray icon with a dot in its top-right corner. Switching tabs quickly keeps one badge showing rather than flashing. The badge is an instant icon change with no animation.
 

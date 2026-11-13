@@ -545,7 +545,7 @@ static void clicked(int id, const char *event) {
     if (id == 11)
         emit("login-toggle", "", "");
     if (id == 12)
-        emit("check-updates", "", "");
+        emit("check-updates-manual", "", "");
     if (id == 13)
         emit("auto-updates", "", "");
     if (id == 14)
@@ -962,6 +962,17 @@ void native_post_update_result(const char *kind, const char *value) {
     g_source_set_callback(source, deliver_update, result, NULL);
     g_source_attach(source, g_main_context_default());
     g_source_unref(source);
+}
+void native_show_update_result(const char *message) {
+    if (!bus)
+        return;
+    g_dbus_connection_call(bus, "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                           "org.freedesktop.Notifications", "Notify",
+                           g_variant_new("(susss@as@a{sv}i)", "Insomemo", 0, "insomemo",
+                                         "Update Check", message, g_variant_new_strv(NULL, 0),
+                                         g_variant_new_array(G_VARIANT_TYPE("{sv}"), NULL, 0), 5000),
+                           G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NO_AUTO_START, -1,
+                           NULL, NULL, NULL);
 }
 static gboolean periodic_update(gpointer data) {
     (void)data;

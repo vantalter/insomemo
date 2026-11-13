@@ -22,6 +22,7 @@ ITEM = "org.kde.StatusNotifierItem"
 PROPS = "org.freedesktop.DBus.Properties"
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 registrations = []
+notifications = []
 
 
 def registered(connection, sender, path, interface, method, parameters, invocation):
@@ -34,6 +35,23 @@ info = Gio.DBusNodeInfo.new_for_xml("""<node>
 <method name="RegisterStatusNotifierItem"><arg type="s" direction="in"/></method>
 </interface></node>""")
 bus.register_object("/StatusNotifierWatcher", info.interfaces[0], registered, None, None)
+
+
+def notified(connection, sender, path, interface, method, parameters, invocation):
+    notifications.append(parameters.unpack()[4])
+    invocation.return_value(GLib.Variant("(u)", (1,)))
+
+
+notify_info = Gio.DBusNodeInfo.new_for_xml("""<node>
+<interface name="org.freedesktop.Notifications">
+<method name="Notify">
+<arg type="s" direction="in"/><arg type="u" direction="in"/>
+<arg type="s" direction="in"/><arg type="s" direction="in"/>
+<arg type="s" direction="in"/><arg type="as" direction="in"/>
+<arg type="a{sv}" direction="in"/><arg type="i" direction="in"/>
+<arg type="u" direction="out"/>
+</method></interface></node>""")
+bus.register_object("/org/freedesktop/Notifications", notify_info.interfaces[0], notified, None, None)
 
 
 def call(destination, path, interface, method, parameters=None):
@@ -90,9 +108,11 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
                     "-I" + directory, "-o", executable, *shlex.split(flags)], check=True)
     subprocess.run([executable, directory], check=True)
     fake_curl = Path(directory, "curl")
-    fake_curl.write_text("#!/usr/bin/python3\nprint(" + repr(json.dumps([
-        {"tag_name": "v0.2.10", "prerelease": True}
-    ])) + ")\n")
+    fake_curl.write_text("#!/usr/bin/python3\nimport json\nfrom pathlib import Path\n"
+                         "marker = Path(" + repr(str(Path(directory, "checked"))) + ")\n"
+                         "version = 'v0.2.10' if marker.exists() else 'v0.2.9'\n"
+                         "marker.touch()\n"
+                         "print(json.dumps([{'tag_name': version, 'prerelease': True}]))\n")
     fake_curl.chmod(0o755)
     env = os.environ.copy()
     env["PATH"] = directory + os.pathsep + env["PATH"]
@@ -105,6 +125,8 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
         # Start the daemon before a tray host exists, as at desktop login.
         wait_for(lambda: Path(directory, "insomemo/icons/insomemo-symbolic.svg").exists(), process)
         own("RequestName")
+        assert call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                    "RequestName", GLib.Variant("(su)", ("org.freedesktop.Notifications", 0))) == (1,)
         wait_for(lambda: len(registrations) == 1, process)
         owner, path = registrations[0]
         assert path == "/StatusNotifierItem", path
@@ -126,7 +148,11 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
         assert "Check for Updates" in menu()
         assert "Automatically Check for Updates" in menu()
         click(12)
+        wait_for(lambda: "Insomemo is up to date" in menu(), process)
+        wait_for(lambda: any("Insomemo is up to date" in n for n in notifications), process)
+        click(12)
         wait_for(lambda: "Version v0.2.10 available" in menu(), process)
+        wait_for(lambda: any("Version v0.2.10 is available" in n for n in notifications), process)
         click(13)
         state_file = Path(directory, "state/state.json")
         wait_for(lambda: state_file.exists() and
@@ -142,7 +168,7 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
         wait_for(lambda: len(registrations) == 2, process)
         assert registrations[1] == registrations[0]
         assert pixels(properties()) == pixels(paused)
-        print("PASS: tray pixels, update menu, saved automatic preference, pause and host restart")
+        print("PASS: tray pixels, manual result feedback, saved automatic preference, pause and host restart")
     finally:
         process.terminate()
         process.wait(timeout=5)

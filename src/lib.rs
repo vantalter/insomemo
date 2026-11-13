@@ -32,6 +32,7 @@ struct App {
     fatal_error: Option<String>,
     login: login::Status,
     update_status: updates::Status,
+    manual_update_check: bool,
 }
 
 thread_local! {
@@ -193,7 +194,7 @@ fn flush() {
     });
 }
 
-fn start_update_check() {
+fn start_update_check(manual: bool) {
     let should_start = APP.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(app) = slot.as_mut() else {
@@ -203,6 +204,7 @@ fn start_update_check() {
             return false;
         }
         app.update_status = updates::Status::Checking;
+        app.manual_update_check = manual;
         true
     });
     if !should_start {
@@ -228,20 +230,29 @@ fn event(kind: &str, first: &str, second: &str) {
 
 fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, site: &str) {
     if kind == "update-result" {
-        APP.with(|slot| {
+        let message = APP.with(|slot| {
             if let Some(app) = slot.borrow_mut().as_mut() {
                 app.update_status = match first {
                     "current" => updates::Status::Current,
                     "available" => updates::Status::Available(second.to_owned()),
                     _ => updates::Status::Failed(second.to_owned()),
                 };
+                let message = app
+                    .manual_update_check
+                    .then(|| app.update_status.manual_message());
+                app.manual_update_check = false;
+                return message;
             }
+            None
         });
         update_tray();
+        if let Some(message) = message {
+            unsafe { native::native_show_update_result(cstring(&message).as_ptr()) };
+        }
         return;
     }
-    if kind == "check-updates" {
-        start_update_check();
+    if kind == "check-updates" || kind == "check-updates-manual" {
+        start_update_check(kind == "check-updates-manual");
         return;
     }
     if kind == "open-updates" {
@@ -432,7 +443,7 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
         });
         unsafe { native::native_set_update_checks(enabled as c_int) };
         if enabled {
-            start_update_check();
+            start_update_check(false);
         }
     }
 }
@@ -549,6 +560,7 @@ fn run() -> Result<(), String> {
             fatal_error: None,
             login: login::Status::Unsupported,
             update_status: updates::Status::Idle,
+            manual_update_check: false,
         })
     });
     #[cfg(target_os = "linux")]
