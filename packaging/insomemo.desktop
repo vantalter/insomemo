@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Insomemo
+Comment=Remember keyboard layouts for apps and window titles
+Exec=insomemo
+Icon=input-keyboard
+Terminal=false
+Categories=Utility;Accessibility;
