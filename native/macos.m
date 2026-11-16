@@ -456,7 +456,7 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
         self.autoBox.state = [menu[@"auto_updates"] boolValue] ? NSControlStateValueOn
                                                                : NSControlStateValueOff;
         NSString *version = menu[@"version"] ?: @"";
-        self.updatesVersionLabel.stringValue = [@"v" stringByAppendingString:version];
+        self.updatesVersionLabel.stringValue = version;
         self.configDir = menu[@"config_dir"];
         // Rust's own check, without Sparkle, runs one request at a time.
         self.checkNow.enabled = ![menu[@"update_checking"] boolValue];
