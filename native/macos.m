@@ -261,7 +261,6 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
 @property NSTextField *trackingStatus;
 @property NSTextField *trackingNote;
 @property NSButton *trackingButton;
-@property NSTextField *versionLabel;
 @property NSTextField *updatesVersionLabel;
 @property NSButton *autoBox;
 @property NSPopUpButton *interval;
@@ -285,7 +284,6 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
     self.trackingStatus = [NSTextField labelWithString:@""];
     self.trackingNote = noteLabel();
     self.trackingButton = pushButton(@"", delegate, @selector(permission:));
-    self.versionLabel = [NSTextField labelWithString:@""];
     NSStackView *links = [NSStackView stackViewWithViews:@[
         pushButton(@"GitHub Project", self, @selector(openProject:)),
         pushButton(@"Configuration Folder", self, @selector(openConfig:)),
@@ -297,7 +295,6 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
             column(@[ self.trackingStatus, self.trackingNote, self.trackingButton ])
         ],
         NSNull.null,
-        @[ @"Version:", self.versionLabel ],
         @[ @"Links:", links ],
     ]);
 }
@@ -399,7 +396,6 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
         self.autoBox.state = [menu[@"auto_updates"] boolValue] ? NSControlStateValueOn
                                                                : NSControlStateValueOff;
         NSString *version = menu[@"version"] ?: @"";
-        self.versionLabel.stringValue = version;
         self.updatesVersionLabel.stringValue = [@"v" stringByAppendingString:version];
         self.configDir = menu[@"config_dir"];
         // Rust's own check, without Sparkle, runs one request at a time.
