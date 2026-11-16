@@ -232,7 +232,53 @@ static NSGridView *form(NSArray *rows) {
     grid.rowAlignment = NSGridRowAlignmentFirstBaseline;
     return grid;
 }
-static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
+/* A cup with a heart, in the outline style of the other tab symbols. */
+static NSImage *donateIcon(void) {
+    NSImage *icon = [NSImage
+         imageWithSize:NSMakeSize(22, 20)
+               flipped:NO
+        drawingHandler:^BOOL(NSRect rect) {
+            (void)rect;
+            [NSColor.blackColor set];
+            NSBezierPath *handle = [NSBezierPath
+                bezierPathWithRoundedRect:NSMakeRect(13.5, 7, 6.5, 7.5)
+                                  xRadius:3.25
+                                  yRadius:3.25];
+            handle.lineWidth = 1.5;
+            [handle stroke];
+            NSRect cup = NSMakeRect(2.5, 3.5, 13.5, 12.5);
+            NSBezierPath *body = [NSBezierPath bezierPathWithRoundedRect:cup
+                                                                 xRadius:4
+                                                                 yRadius:4];
+            // Clear the handle's inner half so it joins the cup's outline.
+            NSGraphicsContext.currentContext.compositingOperation = NSCompositingOperationClear;
+            [body fill];
+            NSGraphicsContext.currentContext.compositingOperation =
+                NSCompositingOperationSourceOver;
+            body.lineWidth = 1.5;
+            [body stroke];
+            // Two lobes and a point, filled separately so their overlap stays solid.
+            CGFloat x = NSMidX(cup), y = NSMidY(cup) + 0.4, r = 2;
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x - 1.6 - r, y + 0.6 - r, 2 * r,
+                                                              2 * r)] fill];
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x + 1.6 - r, y + 0.6 - r, 2 * r,
+                                                              2 * r)] fill];
+            NSBezierPath *point = [NSBezierPath bezierPath];
+            [point moveToPoint:NSMakePoint(x - 3.45, y - 0.1)];
+            [point lineToPoint:NSMakePoint(x + 3.45, y - 0.1)];
+            [point lineToPoint:NSMakePoint(x, y - 3.9)];
+            [point closePath];
+            [point fill];
+            return YES;
+        }];
+    icon.template = YES;
+    icon.accessibilityDescription = @"Donate";
+    return icon;
+}
+static NSImage *symbol(NSString *name, NSString *description) {
+    return [NSImage imageWithSystemSymbolName:name accessibilityDescription:description];
+}
+static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
     NSViewController *controller = [[NSViewController alloc] init];
     controller.title = title;
     NSView *view = [[NSView alloc] init];
@@ -249,7 +295,7 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
     [view layoutSubtreeIfNeeded];
     controller.preferredContentSize = view.fittingSize;
     NSTabViewItem *item = [NSTabViewItem tabViewItemWithViewController:controller];
-    item.image = [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:title];
+    item.image = image;
     return item;
 }
 
@@ -367,9 +413,10 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
 - (void)build {
     NSTabViewController *tabs = [[NSTabViewController alloc] init];
     tabs.tabStyle = NSTabViewControllerTabStyleToolbar;
-    [tabs addTabViewItem:pane(@"General", @"gearshape", [self general])];
-    [tabs addTabViewItem:pane(@"Updates", @"arrow.triangle.2.circlepath", [self updates])];
-    [tabs addTabViewItem:pane(@"Donate", @"hand.tap", [self donate])];
+    [tabs addTabViewItem:pane(@"General", symbol(@"gearshape", @"General"), [self general])];
+    [tabs addTabViewItem:pane(@"Updates", symbol(@"arrow.triangle.2.circlepath", @"Updates"),
+                              [self updates])];
+    [tabs addTabViewItem:pane(@"Donate", donateIcon(), [self donate])];
     self.window = [NSWindow windowWithContentViewController:tabs];
     self.window.styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable;
     self.window.releasedWhenClosed = NO;
