@@ -326,17 +326,30 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
     return grid;
 }
 - (NSView *)donate {
-    NSImageSymbolConfiguration *large =
-        [NSImageSymbolConfiguration configurationWithPointSize:34 weight:NSFontWeightRegular];
-    NSImageView *cup = [NSImageView
-        imageViewWithImage:[[NSImage imageWithSystemSymbolName:@"cup.and.saucer.fill"
-                                       accessibilityDescription:@"Ko-fi"]
-                               imageWithSymbolConfiguration:large]];
-    cup.contentTintColor = NSColor.controlAccentColor;
+    // Ko-fi's logo from the app's asset catalog; a build without one shows a cup.
+    NSImage *logo = [NSImage imageNamed:@"KoFi"];
+    NSImageView *cup;
+    if (logo) {
+        cup = [NSImageView imageViewWithImage:logo];
+        [cup.widthAnchor constraintEqualToConstant:50].active = YES;
+        [cup.heightAnchor constraintEqualToAnchor:cup.widthAnchor
+                                       multiplier:logo.size.height / logo.size.width]
+            .active = YES;
+    } else {
+        NSImageSymbolConfiguration *large =
+            [NSImageSymbolConfiguration configurationWithPointSize:34 weight:NSFontWeightRegular];
+        cup = [NSImageView
+            imageViewWithImage:[[NSImage imageWithSystemSymbolName:@"cup.and.saucer.fill"
+                                           accessibilityDescription:@"Ko-fi"]
+                                   imageWithSymbolConfiguration:large]];
+        cup.contentTintColor = NSColor.controlAccentColor;
+    }
+    cup.imageScaling = NSImageScaleProportionallyUpOrDown;
     NSButton *support = pushButton(@"Support", self, @selector(openDonate:));
     support.keyEquivalent = @"\r";
-    NSStackView *kofi =
-        [NSStackView stackViewWithViews:@[ cup, [NSTextField labelWithString:@"Ko-fi"], support ]];
+    NSTextField *name = [NSTextField labelWithString:@"Ko-fi"];
+    name.font = [NSFont boldSystemFontOfSize:NSFont.systemFontSize];
+    NSStackView *kofi = [NSStackView stackViewWithViews:@[ cup, name, support ]];
     kofi.orientation = NSUserInterfaceLayoutOrientationVertical;
     kofi.spacing = 8;
     NSStackView *stack = column(@[
