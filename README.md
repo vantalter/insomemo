@@ -130,10 +130,10 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 
 **Always Use … In** pins the current layout to *This Tab or Window*, *This Site* (macOS browsers), or *This App*. A pin beats every learned layout: the tab pin first, then the site, then the app. Clicking a checked pin removes it. Manual changes in a pinned context are still learned, so removing the pin restores learned behaviour. **Forget Learned Layout** removes the learned layout for one of those scopes without touching pins. Pins survive **Clear Cache**; **Remove All Pins** clears them. Pins on Ghostty tabs last only for the session, like the tabs' learned layouts.
 
-**Check for Updates…** is in the tray menu on both platforms. Automatic checks are off by default; the choice is saved in `state.json`.
+Update checks run when you ask or, if you turn them on, automatically. Automatic checks are off by default; the choice is saved in `state.json`.
 
-- **macOS app:** updates use [Sparkle](https://sparkle-project.org). A new version opens a window with its release notes and a button to download it; Insomemo then installs it and relaunches. Turn on automatic checks, choose how often (daily, weekly, or monthly), and see when it last checked in **Settings → Updates**. Updates are verified against the project's signing key before they are installed.
-- **Linux, and macOS builds run with `cargo`:** the tray menu also has **Automatically Check for Updates**, which checks once a day. A newer version appears in the menu with a link to the releases page, and a manual check reports its result in a desktop notification or alert. These checks do not install anything.
+- **macOS app:** updates use [Sparkle](https://sparkle-project.org). A new version opens a window with its release notes and a button to download it; Insomemo then installs it and relaunches. Turn on automatic checks, choose how often (daily, weekly, or monthly), see when it last checked, and check right away with **Check Now…** in **Settings → Updates**. Updates are verified against the project's signing key before they are installed.
+- **Linux:** the tray menu has **Check for Updates…** and **Automatically Check for Updates**, which checks once a day. A macOS build run with `cargo`, which has no Sparkle, uses the same check from **Settings → Updates**. A newer version appears in the menu with a link to the releases page, and a manual check reports its result in a desktop notification or alert. These checks do not install anything.
 
 Automatic layout restores briefly badge the tray icon with a dot in its top-right corner. Switching tabs quickly keeps one badge showing rather than flashing. The badge is an instant icon change with no animation.
 

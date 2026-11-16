@@ -162,7 +162,6 @@ static NSArray *layoutList(void) {
 @property NSMenuItem *forgetItem;
 @property NSMenuItem *removePinsItem;
 @property NSString *menuJSON;
-@property NSMenuItem *checkUpdatesItem;
 @property NSMenuItem *updateResultItem;
 @property Settings *settings;
 /* SPUStandardUpdaterController when Sparkle is present, otherwise nil. */
@@ -187,11 +186,14 @@ static NSTextField *wrappingLabel(NSString *text) {
     label.preferredMaxLayoutWidth = 400;
     return label;
 }
+/* Secondary text in a fixed-width column, so changing it wraps the text
+ * instead of resizing the window. */
 static NSTextField *noteLabel(void) {
     NSTextField *label = wrappingLabel(@"");
     label.font = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
     label.textColor = NSColor.secondaryLabelColor;
-    label.preferredMaxLayoutWidth = 300;
+    label.preferredMaxLayoutWidth = 260;
+    [label.widthAnchor constraintEqualToConstant:260].active = YES;
     return label;
 }
 static NSButton *pushButton(NSString *title, id target, SEL action) {
@@ -257,12 +259,14 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
 @property NSButton *loginBox;
 @property NSTextField *loginNote;
 @property NSTextField *trackingStatus;
+@property NSTextField *trackingNote;
 @property NSButton *trackingButton;
 @property NSTextField *versionLabel;
 @property NSTextField *updatesVersionLabel;
 @property NSButton *autoBox;
 @property NSPopUpButton *interval;
 @property NSTextField *lastChecked;
+@property NSButton *checkNow;
 @property NSArray<NSGridRow *> *sparkleRows;
 @property NSString *configDir;
 /* Rust's latest menu state, which can arrive before the window exists. */
@@ -279,6 +283,7 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
                                          action:@selector(toggleLogin:)];
     self.loginNote = noteLabel();
     self.trackingStatus = [NSTextField labelWithString:@""];
+    self.trackingNote = noteLabel();
     self.trackingButton = pushButton(@"", delegate, @selector(permission:));
     self.versionLabel = [NSTextField labelWithString:@""];
     NSStackView *links = [NSStackView stackViewWithViews:@[
@@ -287,7 +292,10 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
     ]];
     return form(@[
         @[ @"Startup:", column(@[ self.loginBox, self.loginNote ]) ],
-        @[ @"Window / Tab Tracking:", column(@[ self.trackingStatus, self.trackingButton ]) ],
+        @[
+            @"Window / Tab Tracking:",
+            column(@[ self.trackingStatus, self.trackingNote, self.trackingButton ])
+        ],
         NSNull.null,
         @[ @"Version:", self.versionLabel ],
         @[ @"Links:", links ],
@@ -306,12 +314,13 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
     self.interval.target = self;
     self.interval.action = @selector(chooseInterval:);
     self.lastChecked = [NSTextField labelWithString:@""];
+    self.checkNow = pushButton(@"Check Now…", delegate, @selector(checkUpdates:));
     self.updatesVersionLabel = [NSTextField labelWithString:@""];
     NSGridView *grid = form(@[
         @[ @"Software Update:", self.autoBox ],
         @[ @"", self.interval ],
         @[ @"Last checked:", self.lastChecked ],
-        @[ @"", pushButton(@"Check Now…", delegate, @selector(checkUpdates:)) ],
+        @[ @"", self.checkNow ],
         NSNull.null,
         @[ @"Version:", self.updatesVersionLabel ],
     ]);
@@ -393,11 +402,15 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
         self.versionLabel.stringValue = version;
         self.updatesVersionLabel.stringValue = [@"v" stringByAppendingString:version];
         self.configDir = menu[@"config_dir"];
+        // Rust's own check, without Sparkle, runs one request at a time.
+        self.checkNow.enabled = ![menu[@"update_checking"] boolValue];
     }
     BOOL trusted = AXIsProcessTrusted();
-    self.trackingStatus.stringValue = trusted
-                                          ? @"On: layouts are remembered per window and tab."
-                                          : @"Off: layouts are remembered per app only.";
+    self.trackingStatus.stringValue = trusted ? @"On" : @"Off";
+    self.trackingNote.stringValue =
+        trusted ? @"Layouts are remembered for each window and tab."
+                : @"Layouts are remembered for each app only. Grant Accessibility access to "
+                  @"tell windows and tabs apart.";
     self.trackingButton.title = trusted ? @"Open Privacy Settings…" : @"Grant Access…";
     id updater = [self updater];
     for (NSGridRow *row in self.sparkleRows)
@@ -530,10 +543,6 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                           action:@selector(permission:)
                                    keyEquivalent:@""];
     self.permissionItem.target = self;
-    self.checkUpdatesItem = [menu addItemWithTitle:@"Check for Updates…"
-                                            action:@selector(checkUpdates:)
-                                     keyEquivalent:@""];
-    self.checkUpdatesItem.target = self;
     self.updateResultItem = [menu addItemWithTitle:@""
                                             action:@selector(openUpdates:)
                                      keyEquivalent:@""];
@@ -872,7 +881,6 @@ static void updateScopeMenus(NSString *json) {
         pins ? [NSString stringWithFormat:@"Remove All Pins (%lu)", (unsigned long)pins]
              : @"Remove All Pins";
     delegate.removePinsItem.enabled = pins > 0;
-    delegate.checkUpdatesItem.enabled = ![menu[@"update_checking"] boolValue];
     // Rust's check result; Sparkle shows its own windows instead.
     NSString *updateLabel = delegate.updaterController ? @"" : menu[@"update_label"] ?: @"";
     delegate.updateResultItem.title = updateLabel;
