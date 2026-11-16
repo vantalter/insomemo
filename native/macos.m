@@ -356,7 +356,7 @@ static NSTabViewItem *pane(NSString *title, NSString *symbol, NSView *content) {
     tabs.tabStyle = NSTabViewControllerTabStyleToolbar;
     [tabs addTabViewItem:pane(@"General", @"gearshape", [self general])];
     [tabs addTabViewItem:pane(@"Updates", @"arrow.triangle.2.circlepath", [self updates])];
-    [tabs addTabViewItem:pane(@"Donate", @"cup.and.saucer", [self donate])];
+    [tabs addTabViewItem:pane(@"Donate", @"hand.tap", [self donate])];
     self.window = [NSWindow windowWithContentViewController:tabs];
     self.window.styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable;
     self.window.releasedWhenClosed = NO;
