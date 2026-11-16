@@ -28,11 +28,21 @@ ditto "$build/Release/Insomemo.app" "$app"
 identity=${CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning \
     | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p' | head -1)}
 identity=${identity:--}
-if [ "${identity#Developer ID}" != "$identity" ]; then
-    # Developer ID distribution requires the hardened runtime and a secure timestamp.
-    codesign --force --sign "$identity" --options runtime --timestamp "$app"
-else
-    codesign --force --sign "$identity" "$app"
-fi
+sign() {
+    if [ "${identity#Developer ID}" != "$identity" ]; then
+        # Developer ID distribution requires the hardened runtime and a secure timestamp.
+        codesign --force --sign "$identity" --options runtime --timestamp "$1"
+    else
+        codesign --force --sign "$identity" "$1"
+    fi
+}
+# Sparkle's XPC services are only for sandboxed apps, which Insomemo is not.
+# Its remaining helpers are signed before the framework, and the framework
+# before the app, so each signature covers already signed code.
+sparkle="$app/Contents/Frameworks/Sparkle.framework"
+rm -rf "$sparkle/XPCServices" "$sparkle/Versions/B/XPCServices"
+for code in "$sparkle/Versions/B/Autoupdate" "$sparkle/Versions/B/Updater.app" "$sparkle" "$app"; do
+    [ -e "$code" ] && sign "$code"
+done
 if [ "$identity" = - ]; then echo "signed with ad-hoc signature"; else echo "signed with $identity"; fi
 echo "$app"

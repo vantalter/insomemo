@@ -985,13 +985,14 @@ static gboolean periodic_update(gpointer data) {
     emit("check-updates", "", "");
     return G_SOURCE_CONTINUE;
 }
-void native_set_update_checks(int enabled) {
+int native_set_update_checks(int enabled) {
     if (update_timer) {
         g_source_remove(update_timer);
         update_timer = 0;
     }
     if (enabled)
         update_timer = g_timeout_add_seconds(86400, periodic_update, NULL);
+    return 0;
 }
 void native_open_updates_page(void) {
     GError *error = NULL;

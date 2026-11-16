@@ -66,6 +66,7 @@ fn menu_json(
     layouts: &[Layout],
     login: login::Status,
     update: &updates::Status,
+    config_dir: &std::path::Path,
 ) -> String {
     let name = |id: &str| {
         layouts
@@ -109,6 +110,8 @@ fn menu_json(
         "update_label": update.detail(),
         "update_available": update.can_open(),
         "update_checking": matches!(update, updates::Status::Checking),
+        "version": env!("CARGO_PKG_VERSION"),
+        "config_dir": config_dir.to_string_lossy(),
         "scopes": scopes,
     })
     .to_string()
@@ -151,7 +154,14 @@ fn update_tray() {
             .map(context_label)
             .unwrap_or_else(|| "No focused application".into());
         let layouts = serde_json::to_string(&app.layouts).unwrap();
-        let menu = menu_json(engine, &app.layouts, app.login, &app.update_status);
+        let config_dir = app.store.path.parent().unwrap_or(&app.store.path);
+        let menu = menu_json(
+            engine,
+            &app.layouts,
+            app.login,
+            &app.update_status,
+            config_dir,
+        );
         let message = if app.error.is_empty() {
             &app.warning
         } else {
@@ -441,8 +451,9 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
                 .as_ref()
                 .is_some_and(|app| app.engine.state.auto_check_updates)
         });
-        unsafe { native::native_set_update_checks(enabled as c_int) };
-        if enabled {
+        // Sparkle in the macOS app schedules and runs its own checks.
+        let native = unsafe { native::native_set_update_checks(enabled as c_int) } != 0;
+        if enabled && !native {
             start_update_check(false);
         }
     }
