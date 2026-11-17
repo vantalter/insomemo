@@ -78,7 +78,7 @@ The app is an Xcode project, [macos/Insomemo.xcodeproj](macos/Insomemo.xcodeproj
 
 The app lives in the menu bar, without a Dock icon. Its monochrome stacked-keyboard symbol automatically renders white or dark to match the macOS menu bar. The tray is icon-only; the OS input menu shows the current language. Pausing dims the macOS icon while keeping its menu available. The purple macOS app icon uses the same keyboard mark with a static switch dot; source artwork and preparation notes are in [assets](assets/README.md).
 
-**Settings…** (⌘,) in the menu opens a small window with three tabs: **General** (Launch at Login, Window / Tab Tracking, and links to the project and the configuration folder), **Updates** (with the version), and **Donate**. Opening Insomemo again from Finder or Spotlight while it runs also opens Settings.
+**Settings…** (⌘,) in the menu opens a small window with three tabs: **General** (Launch at Login, Window / Tab Tracking, whether macOS's own document input switching is on, and links to the project and the configuration folder), **Updates** (with the version), and **Donate**. Opening Insomemo again from Finder or Spotlight while it runs also opens Settings.
 
 To place Insomemo beside the macOS input-source icon, hold **Command** and drag the Insomemo icon there. The status item has a stable macOS autosave name so the system can retain its identity across launches. If the system input-source icon is hidden, Insomemo remains in its normal menu-bar position. macOS does not provide a supported API to position this app automatically relative to that system icon.
 
@@ -137,7 +137,7 @@ Update checks run when you ask or, if you turn them on, automatically. Automatic
 
 Automatic layout restores briefly badge the tray icon with a dot in its top-right corner. Switching tabs quickly keeps one badge showing rather than flashing. The badge is an instant icon change with no animation.
 
-Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Most apps must expose tab changes through their window title; Ghostty's native macOS tabs are tracked by accessibility window identity. Insomemo does not inspect browser content or capture keystrokes.
+Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app: it keeps one input source per document window, only in apps that support it, while Insomemo learns per window, tab, site, and app in every app. **Settings → General** shows whether it is on, and **Open Input Sources…** opens the System Settings page where it is turned off. Most apps must expose tab changes through their window title; Ghostty's native macOS tabs are tracked by accessibility window identity. Insomemo does not inspect browser content or capture keystrokes.
 
 ## Privacy
 

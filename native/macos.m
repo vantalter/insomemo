@@ -306,6 +306,8 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
 @property NSTextField *loginNote;
 @property NSTextField *trackingStatus;
 @property NSTextField *trackingNote;
+@property NSTextField *documentStatus;
+@property NSTextField *documentNote;
 @property NSButton *trackingButton;
 @property NSTextField *updatesVersionLabel;
 @property NSButton *autoBox;
@@ -322,6 +324,13 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
 - (id)updater {
     return [delegate.updaterController valueForKey:@"updater"];
 }
+/* macOS's own "Automatically switch to a document's input source" option. */
+static BOOL documentInputSources(void) {
+    CFPreferencesAppSynchronize(CFSTR("com.apple.HIToolbox"));
+    NSDictionary *properties = CFBridgingRelease(CFPreferencesCopyAppValue(
+        CFSTR("AppleGlobalTextInputProperties"), CFSTR("com.apple.HIToolbox")));
+    return [properties[@"TextInputGlobalPropertyPerContextInput"] boolValue];
+}
 - (NSView *)general {
     self.loginBox = [NSButton checkboxWithTitle:@"Launch at Login"
                                          target:self
@@ -330,6 +339,10 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
     self.trackingStatus = [NSTextField labelWithString:@""];
     self.trackingNote = noteLabel();
     self.trackingButton = pushButton(@"", delegate, @selector(permission:));
+    self.documentStatus = [NSTextField labelWithString:@""];
+    self.documentNote = noteLabel();
+    NSButton *inputSources =
+        pushButton(@"Open Input Sources…", self, @selector(openInputSources:));
     NSStackView *links = [NSStackView stackViewWithViews:@[
         pushButton(@"GitHub Project", self, @selector(openProject:)),
         pushButton(@"Configuration Folder", self, @selector(openConfig:)),
@@ -339,6 +352,10 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
         @[
             @"Window / Tab Tracking:",
             column(@[ self.trackingStatus, self.trackingNote, self.trackingButton ])
+        ],
+        @[
+            @"macOS Document Switching:",
+            column(@[ self.documentStatus, self.documentNote, inputSources ])
         ],
         NSNull.null,
         @[ @"Links:", links ],
@@ -468,6 +485,16 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
                 : @"Layouts are remembered for each app only. Grant Accessibility access to "
                   @"tell windows and tabs apart.";
     self.trackingButton.title = trusted ? @"Open Privacy Settings…" : @"Grant Access…";
+    BOOL documents = documentInputSources();
+    self.documentStatus.stringValue = documents ? @"On" : @"Off";
+    self.documentNote.stringValue =
+        documents ? @"macOS's “Automatically switch to a document's input source” is on. It "
+                    @"switches layouts too, so the two compete; turn it off to let Insomemo "
+                    @"choose."
+                  : @"macOS's “Automatically switch to a document's input source” is off, as "
+                    @"it should be. It keeps one layout per document window, only in apps "
+                    @"that support it. Insomemo learns per window, tab, site, and app in "
+                    @"every app.";
     id updater = [self updater];
     for (NSGridRow *row in self.sparkleRows)
         row.hidden = !updater;
@@ -501,6 +528,13 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
     if (self.configDir.length)
         [NSWorkspace.sharedWorkspace openURL:[NSURL fileURLWithPath:self.configDir
                                                          isDirectory:YES]];
+}
+- (void)openInputSources:(id)sender {
+    // The Keyboard settings' input source sheet, where macOS's own option is;
+    // this older form of the link also works in macOS 12's System Preferences.
+    [NSWorkspace.sharedWorkspace
+        openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.keyboard?"
+                                     @"InputSources"]];
 }
 - (void)openDonate:(id)sender {
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:DonateURL]];
