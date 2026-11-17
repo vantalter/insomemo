@@ -108,8 +108,11 @@ with tempfile.TemporaryDirectory(prefix="insomemo-tray-") as directory:
                     "-I" + directory, "-o", executable, *shlex.split(flags)], check=True)
     subprocess.run([executable, directory], check=True)
     installed = subprocess.check_output([sys.argv[1], "--version"], text=True).strip().split()[-1]
-    major, minor, patch = map(int, installed.split("."))
-    current = f"v{installed}"
+    # A release candidate such as 0.3.0-rc.1 is up to date with any older
+    # final release; Insomemo ignores pre-release tags when checking.
+    base, _, candidate = installed.partition("-")
+    major, minor, patch = map(int, base.split("."))
+    current = "v0.0.0" if candidate else f"v{installed}"
     newer = f"v{major}.{minor}.{patch + 1}"
     fake_curl = Path(directory, "curl")
     fake_curl.write_text("#!/usr/bin/python3\nimport json\nfrom pathlib import Path\n"

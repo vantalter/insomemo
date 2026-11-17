@@ -76,12 +76,19 @@ pub fn parse_releases(body: &str, current: &str) -> Result<Status, String> {
     let Some((latest, tag)) = best else {
         return Err("No published version found".into());
     };
-    let installed = numeric(current).ok_or("Invalid installed version")?;
-    Ok(if latest > installed {
-        Status::Available(tag)
-    } else {
-        Status::Current
-    })
+    // A release candidate such as 0.3.0-rc.1 comes before 0.3.0 itself, so
+    // the final release is offered as an update to it.
+    let (base, candidate) = current
+        .split_once('-')
+        .map_or((current, false), |(base, _)| (base, true));
+    let installed = numeric(base).ok_or("Invalid installed version")?;
+    Ok(
+        if latest > installed || (latest == installed && candidate) {
+            Status::Available(tag)
+        } else {
+            Status::Current
+        },
+    )
 }
 
 pub fn fetch() -> Result<Status, String> {
@@ -128,5 +135,20 @@ mod tests {
         );
         assert_eq!(parse_releases(releases, "0.2.10").unwrap(), Status::Current);
         assert!(parse_releases("{}", "0.2.9").is_err());
+    }
+
+    #[test]
+    fn release_candidates_update_to_their_final_release() {
+        let before = r#"[{"tag_name":"v0.2.10"},{"tag_name":"v0.3.0-rc.1","prerelease":true}]"#;
+        assert_eq!(
+            parse_releases(before, "0.3.0-rc.1").unwrap(),
+            Status::Current
+        );
+        let after = r#"[{"tag_name":"v0.3.0"},{"tag_name":"v0.3.0-rc.1","prerelease":true}]"#;
+        assert_eq!(
+            parse_releases(after, "0.3.0-rc.1").unwrap(),
+            Status::Available("v0.3.0".into())
+        );
+        assert_eq!(parse_releases(after, "0.3.0").unwrap(), Status::Current);
     }
 }
