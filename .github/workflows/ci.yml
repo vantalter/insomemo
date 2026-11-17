@@ -40,6 +40,18 @@ jobs:
       - name: macOS app
         if: runner.os == 'macOS'
         run: scripts/build-macos-app.sh
+      - name: macOS app checks
+        if: runner.os == 'macOS'
+        run: |
+          scripts/check-macos-app.sh
+          # Dry-run the release's update feed with a throwaway signing key.
+          ditto -c -k --keepParent dist/Insomemo.app Insomemo-test.zip
+          SPARKLE_PRIVATE_KEY=$(head -c 32 /dev/urandom | base64) \
+            scripts/make-appcast.sh Insomemo-test.zip 0.0.0 > appcast.xml
+          xmllint --noout appcast.xml
+          grep -q 'sparkle:edSignature="[A-Za-z0-9+/=]\{80,\}" length="[0-9][0-9]*"' appcast.xml
+          grep -q 'url="https://github.com/vantalter/insomemo/releases/download/v0.0.0/Insomemo-test.zip"' appcast.xml
+          grep -q '<sparkle:version>0.0.0</sparkle:version>' appcast.xml
       - name: Linux runtime smoke test
         if: runner.os == 'Linux'
         run: |

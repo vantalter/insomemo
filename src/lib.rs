@@ -638,6 +638,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn menu_state_gives_settings_the_version_and_config_folder() {
+        let engine = Engine::new(Config::default(), engine::State::default());
+        let menu = menu_json(
+            &engine,
+            &[],
+            login::Status::Off,
+            &updates::Status::Idle,
+            std::path::Path::new("/home/user/.config/insomemo"),
+        );
+        let menu: serde_json::Value = serde_json::from_str(&menu).unwrap();
+        assert_eq!(menu["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(menu["config_dir"], "/home/user/.config/insomemo");
+        assert_eq!(menu["login"], "off");
+        assert_eq!(menu["auto_updates"], false);
+        assert_eq!(menu["update_checking"], false);
+    }
+
+    #[test]
     fn context_labels_are_short_and_name_the_app() {
         assert_eq!(app_name("com.apple.Safari"), "Safari");
         assert_eq!(app_name("/opt/tools/editor"), "editor");
