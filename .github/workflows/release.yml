@@ -28,6 +28,9 @@ jobs:
       signed: ${{ steps.signing.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The update feed lists the commits since the previous release tag.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
@@ -85,12 +88,23 @@ jobs:
         run: |
           scripts/package-macos.sh \
             "Insomemo-${{ needs.version.outputs.version }}-macos-universal"
+      - name: Update feed
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::warning::No SPARKLE_PRIVATE_KEY secret; without appcast.xml the macOS app cannot update itself to this release"
+            exit 0
+          fi
+          scripts/make-appcast.sh "Insomemo-$VERSION-macos-universal.zip" "$VERSION" > appcast.xml
       - uses: actions/upload-artifact@v4
         with:
           name: release-macos
           path: |
             Insomemo-*.zip
             Insomemo-*.dmg
+            appcast.xml
 
   linux:
     needs: version
@@ -167,7 +181,9 @@ jobs:
           cd release-files
           sha256sum * > SHA256SUMS
           prerelease=""
-          case "$VERSION" in 0.*|*-*) prerelease="--prerelease" ;; esac
+          # Only suffixed versions such as 1.2.0-beta: the app's update feed is
+          # read from the latest release, which GitHub never sets to a pre-release.
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
           # Keep the macOS instructions that match how this build was signed.
           if [ "${{ needs.macos.outputs.signed }}" = "true" ]; then drop=unsigned; else drop=signed; fi
           sed -e "/<!-- $drop -->/,/<!-- \/$drop -->/d" -e '/^<!-- \/*\(un\)*signed -->$/d' \

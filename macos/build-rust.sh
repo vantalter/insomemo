@@ -2,7 +2,7 @@
 # Xcode build phase: compiles the Rust crate as a static library for each
 # architecture Xcode builds and joins them into one library for the linker.
 # It also writes version.h, which Info.plist preprocessing reads, so the app's
-# version comes from Cargo.toml.
+# version comes from Cargo.toml and Sparkle's public key from macos/sparkle-public-key.
 set -eu
 # Xcode does not read shell profiles, so rustup's default location is added.
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -26,4 +26,8 @@ done
 mkdir -p "$DERIVED_FILE_DIR"
 lipo -create -output "$DERIVED_FILE_DIR/libinsomemo.a" $libraries
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-echo "#define INSOMEMO_VERSION $version" > "$DERIVED_FILE_DIR/version.h"
+# Sparkle installs only updates signed with the private half of this key.
+key=$(cat macos/sparkle-public-key 2>/dev/null || true)
+[ -n "$key" ] || echo "warning: macos/sparkle-public-key is missing; Sparkle cannot verify updates"
+printf '#define INSOMEMO_VERSION %s\n#define INSOMEMO_SPARKLE_PUBLIC_KEY %s\n' "$version" "$key" \
+    > "$DERIVED_FILE_DIR/version.h"

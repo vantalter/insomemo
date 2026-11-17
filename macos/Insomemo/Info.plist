@@ -23,7 +23,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>INSOMEMO_VERSION</string>
 	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<string>INSOMEMO_VERSION</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -32,5 +32,12 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<!-- Info.plist is preprocessed; $() keeps "//" from starting a comment. -->
+	<key>SUFeedURL</key>
+	<string>https:/$()/github.com/vantalter/insomemo/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>INSOMEMO_SPARKLE_PUBLIC_KEY</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
 </dict>
 </plist>

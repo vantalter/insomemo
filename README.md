@@ -4,7 +4,7 @@
 
 Switch to Ukrainian in one Slack conversation and English in a terminal tab. Insomemo learns each choice as you make it and restores it whenever you return to that window, tab, or chat. There are no rules to write: the layout you pick in a context is the layout that context gets next time.
 
-It is a small Rust daemon (under 500 KiB, about 12 MB of memory on macOS) with a native tray on both platforms. No webview, telemetry, ads, server, or polling loop.
+It is a small Rust daemon (under 500 KiB, about 12 MB of memory on macOS) with a native tray on both platforms. No telemetry, ads, server, or polling loop.
 
 ## Why Insomemo
 
@@ -78,9 +78,11 @@ The app is an Xcode project, [macos/Insomemo.xcodeproj](macos/Insomemo.xcodeproj
 
 The app lives in the menu bar, without a Dock icon. Its monochrome stacked-keyboard symbol automatically renders white or dark to match the macOS menu bar. The tray is icon-only; the OS input menu shows the current language. Pausing dims the macOS icon while keeping its menu available. The purple macOS app icon uses the same keyboard mark with a static switch dot; source artwork and preparation notes are in [assets](assets/README.md).
 
+**Settings…** (⌘,) in the menu opens a small window with three tabs: **General** (Launch at Login, Window / Tab Tracking, whether macOS's own document input switching is on, and links to the project and the configuration folder), **Updates** (with the version), and **Donate**. Opening Insomemo again from Finder or Spotlight while it runs also opens Settings.
+
 To place Insomemo beside the macOS input-source icon, hold **Command** and drag the Insomemo icon there. The status item has a stable macOS autosave name so the system can retain its identity across launches. If the system input-source icon is hidden, Insomemo remains in its normal menu-bar position. macOS does not provide a supported API to position this app automatically relative to that system icon.
 
-Open its menu and select **Enable Window / Tab Tracking…**, then grant **Accessibility** access in System Settings → Privacy & Security → Accessibility. Until granted, application-level tracking works, but titles are unavailable. The menu item then changes to **Window / Tab Tracking** with a checkmark, and tracking starts without a restart; choosing it again opens the Accessibility settings, where the permission can be turned off. macOS ties the permission to the app's signature. `make app` signs with your Apple Development certificate when one is installed, so the permission survives rebuilds; without one, the build is ad-hoc signed, macOS treats every rebuild as a new app, and you must grant the permission again (remove the old Insomemo entry first). Keep the bundle at a stable path. Once release signing is configured, release builds are signed with a Developer ID and notarized, so the grant survives updates.
+Open its menu and select **Enable Window / Tab Tracking…**, then grant **Accessibility** access in System Settings → Privacy & Security → Accessibility. Until granted, application-level tracking works, but titles are unavailable. Once granted, tracking starts without a restart and the menu item disappears; **Settings → General** shows the permission's state, and its **Open Privacy Settings…** button opens the Accessibility settings, where the permission can be turned off. macOS ties the permission to the app's signature. `make app` signs with your Apple Development certificate when one is installed, so the permission survives rebuilds; without one, the build is ad-hoc signed, macOS treats every rebuild as a new app, and you must grant the permission again (remove the old Insomemo entry first). Keep the bundle at a stable path. Once release signing is configured, release builds are signed with a Developer ID and notarized, so the grant survives updates.
 
 The standalone executable is `target/release/insomemo`. To run it in a terminal:
 
@@ -128,11 +130,14 @@ Upgrading from Input Switcher: when no `insomemo` directory exists, the app reus
 
 **Always Use … In** pins the current layout to *This Tab or Window*, *This Site* (macOS browsers), or *This App*. A pin beats every learned layout: the tab pin first, then the site, then the app. Clicking a checked pin removes it. Manual changes in a pinned context are still learned, so removing the pin restores learned behaviour. **Forget Learned Layout** removes the learned layout for one of those scopes without touching pins. Pins survive **Clear Cache**; **Remove All Pins** clears them. Pins on Ghostty tabs last only for the session, like the tabs' learned layouts.
 
-The tray menu has **Check for Updates…** and **Automatically Check for Updates**. Manual checks show the result in an alert on macOS or a desktop notification on Linux. Manual checks and enabled daily checks fetch published releases from GitHub, including this project’s `0.x` prereleases. A newer version appears in the menu with a link to the releases page. Automatic checks are off by default; the choice is saved in `state.json`. The check does not install anything.
+Update checks run when you ask or, if you turn them on, automatically. Automatic checks are off by default; the choice is saved in `state.json`.
+
+- **macOS app:** updates use [Sparkle](https://sparkle-project.org). A new version opens a window with its release notes and a button to download it; Insomemo then installs it and relaunches. Turn on automatic checks, choose how often (daily, weekly, or monthly), see when it last checked, and check right away with **Check Now…** in **Settings → Updates**. Updates are verified against the project's signing key before they are installed.
+- **Linux:** the tray menu has **Check for Updates…** and **Automatically Check for Updates**, which checks once a day. A macOS build run with `cargo`, which has no Sparkle, uses the same check from **Settings → Updates**. A newer version appears in the menu with a link to the releases page, and a manual check reports its result in a desktop notification or alert. These checks do not install anything.
 
 Automatic layout restores briefly badge the tray icon with a dot in its top-right corner. Switching tabs quickly keeps one badge showing rather than flashing. The badge is an instant icon change with no animation.
 
-Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app. Most apps must expose tab changes through their window title; Ghostty's native macOS tabs are tracked by accessibility window identity. Insomemo does not inspect browser content or capture keystrokes.
+Avoid running another per-window layout restorer at the same time. The macOS “Automatically switch to a document's input source” setting can compete with this app: it keeps one input source per document window, only in apps that support it, while Insomemo learns per window, tab, site, and app in every app. **Settings → General** shows whether it is on, and **Open Input Sources…** opens the System Settings page where it is turned off. Most apps must expose tab changes through their window title; Ghostty's native macOS tabs are tracked by accessibility window identity. Insomemo does not inspect browser content or capture keystrokes.
 
 ## Privacy
 
@@ -141,12 +146,12 @@ What Insomemo reads, in memory only:
 - **macOS:** the frontmost app's bundle ID, its focused window's title, Ghostty's window identity, and, for web pages, the page address (through Accessibility). Only the host, such as `docs.google.com`, is used, and only as a hash. It asks for Accessibility, not Input Monitoring, so macOS does not let it read keystrokes.
 - **Linux:** the active window's class and title (X11 properties or Sway/Hyprland IPC).
 
-What it stores: `state.json` (see [How memory works](#how-memory-works)) and your optional `config.json`, in a directory only you can open. Besides those, it writes only its own tray icons on Linux (`$XDG_RUNTIME_DIR/insomemo/icons`) and, if you turn on **Launch at Login**, a login item on macOS or `~/.config/autostart/insomemo.desktop` on Linux. Update checks connect to `api.github.com` only when requested or when automatic checks are enabled. They send the standard HTTPS request and no saved layouts, titles, or state.
+What it stores: `state.json` (see [How memory works](#how-memory-works)) and your optional `config.json`, in a directory only you can open. Besides those, it writes only its own tray icons on Linux (`$XDG_RUNTIME_DIR/insomemo/icons`) and, if you turn on **Launch at Login**, a login item on macOS or `~/.config/autostart/insomemo.desktop` on Linux. Update checks connect to GitHub only when requested or when automatic checks are enabled: the macOS app reads the update feed from `github.com` and downloads updates from there, and the Linux tray asks `api.github.com` for the release list. They send the standard HTTPS request and no saved layouts, titles, or state; Sparkle's optional system profile is not enabled.
 
 Ways to check:
 
 ```sh
-# Optional checks run curl as a short-lived child process.
+# Linux: optional checks run curl as a short-lived child process.
 ps -ax -o command | grep '[c]url.*api.github.com'
 # Linux: local Unix sockets (D-Bus, X11, compositor IPC).
 ss -xp | grep insomemo
@@ -183,7 +188,19 @@ Manual desktop acceptance checks:
 
 ## Releasing
 
-Set `version` in `Cargo.toml`, merge to `main`, then push a matching tag, for example `git tag v0.1.0 && git push origin v0.1.0`. The release workflow checks that the tag matches, tests and builds every platform, and publishes a GitHub release with checksums. Versions below 1.0 are published as pre-releases.
+Set `version` in `Cargo.toml`, merge to `main`, then push a matching tag, for example `git tag v0.1.0 && git push origin v0.1.0`. The release workflow checks that the tag matches, tests and builds every platform, and publishes a GitHub release with checksums. Only versions with a suffix, such as `1.2.0-beta`, are published as pre-releases, because the macOS app reads its update feed from the latest release, which GitHub never sets to a pre-release.
+
+The macOS app updates itself from `appcast.xml`, a feed the workflow adds to each release. Sparkle installs only updates signed with the project's private EdDSA key. Create the key once with Sparkle's `generate_keys` tool, which Xcode downloads with the package (Xcode → Settings → Locations shows the DerivedData folder):
+
+```sh
+tools=$(find ~/Library/Developer/Xcode/DerivedData -path '*artifacts/sparkle/Sparkle/bin' | head -1)
+"$tools/generate_keys" --account insomemo        # stores the key in your login keychain
+"$tools/generate_keys" --account insomemo -p > macos/sparkle-public-key
+"$tools/generate_keys" --account insomemo -x sparkle-private-key   # for the workflow
+gh secret set SPARKLE_PRIVATE_KEY < sparkle-private-key && rm sparkle-private-key
+```
+
+Commit `macos/sparkle-public-key`; the build puts it in the app's `Info.plist`. Without the `SPARKLE_PRIVATE_KEY` secret, a release has no update feed and the workflow says so in a warning. Keep the private key safe: anyone holding it can publish updates the app accepts, and losing it means existing installations can no longer update automatically.
 
 When these repository secrets are set, the macOS app and disk image are signed with a Developer ID, use the hardened runtime, and are notarized and stapled. Without any of them, the app is ad-hoc signed and the release notes show the Gatekeeper steps instead. Setting only some of them fails the release, so a typo cannot silently publish an unsigned build.
 
@@ -207,9 +224,9 @@ This writes `dist/Insomemo.zip` and `dist/Insomemo.dmg`.
 
 ## Optional startup
 
-Choose **Launch at Login** in the tray menu. It is off until you turn it on, and the operating system keeps the setting, so the checkmark always reflects what will happen at your next login.
+Choose **Launch at Login** in **Settings → General** on macOS or in the tray menu on Linux. It is off until you turn it on, and the operating system keeps the setting, so the checkmark always reflects what will happen at your next login.
 
-- **macOS 13 or newer:** the app registers itself as a login item, which appears in System Settings → General → Login Items. If macOS asks for approval, the menu item says so and opens that page. Keep the app at a stable path, such as `/Applications`. On macOS 12, or when running the bare `insomemo` binary, the item is hidden; add the app in Login Items yourself.
+- **macOS 13 or newer:** the app registers itself as a login item, which appears in System Settings → General → Login Items. If macOS asks for approval, Settings says so and opens that page. Keep the app at a stable path, such as `/Applications`. On macOS 12, or when running the bare `insomemo` binary, the item is hidden; add the app in Login Items yourself.
 - **Linux:** the app writes an XDG autostart entry, `~/.config/autostart/insomemo.desktop`, that starts the binary at its current path, so install it somewhere stable such as `~/.local/bin` first. GNOME, KDE, Xfce, and other desktops that follow the XDG autostart specification run it; Sway and Hyprland do not by default, so start it from their config (`exec insomemo` or `exec-once = insomemo`) or use the provided [systemd user service](packaging/insomemo.service) instead. Use one method only; a second copy exits because the first holds the state lock.
 
 ## Troubleshooting
@@ -220,7 +237,7 @@ Choose **Launch at Login** in the tray menu. It is off until you turn it on, and
 tccutil reset Accessibility dev.insomemo.app
 ```
 
-Then choose **Enable Window / Tab Tracking…** in Insomemo's menu and turn on the new entry. The menu changes to **Window / Tab Tracking** within a second, without a restart.
+Then choose **Enable Window / Tab Tracking…** in Insomemo's menu and turn on the new entry. Within a second the menu item disappears and tracking starts, without a restart.
 
 **macOS: Insomemo's icon looks like coloured stripes in System Settings' privacy lists.** Versions up to 0.2.3 stored the small icon sizes in a format those lists misread. Install a newer version, then clear macOS's icon cache in Terminal and restart the Mac:
 

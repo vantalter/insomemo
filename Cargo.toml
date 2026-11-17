@@ -5,7 +5,6 @@ edition = "2024"
 description = "Event-driven, context-aware keyboard layout memory"
 license = "MIT"
 repository = "https://github.com/vantalter/insomemo"
-homepage = "https://github.com/vantalter/insomemo"
 readme = "README.md"
 keywords = ["keyboard-layout", "input-source", "tray", "macos", "linux"]
 categories = ["command-line-utilities", "os"]

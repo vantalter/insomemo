@@ -11,6 +11,19 @@ static void emit(NSString *kind, NSString *first, NSString *second) {
     switcher_event(kind.UTF8String, (first ?: @"").UTF8String, (second ?: @"").UTF8String);
 }
 
+// Sparkle checks for, downloads, and installs updates. Only the Xcode build
+// links it; a plain cargo build runs without it and keeps Rust's update check,
+// so Sparkle is found at run time and used through these declarations and KVC.
+@interface NSObject (InsomemoSparkle)
+- (instancetype)initWithStartingUpdater:(BOOL)startUpdater
+                        updaterDelegate:(id)updaterDelegate
+                     userDriverDelegate:(id)userDriverDelegate;
+- (void)checkForUpdates:(id)sender;
+@end
+
+static NSString *const ProjectURL = @"https://github.com/vantalter/insomemo";
+static NSString *const DonateURL = @"https://ko-fi.com/vantalter";
+
 static NSString *sourceID(TISInputSourceRef source) {
     return source
                ? (__bridge NSString *)TISGetInputSourceProperty(source, kTISPropertyInputSourceID)
@@ -130,6 +143,7 @@ static NSArray *layoutList(void) {
     return layouts;
 }
 
+@class Settings;
 @interface Switcher : NSObject <NSApplicationDelegate, NSMenuDelegate>
 @property NSStatusItem *status;
 @property NSMenuItem *contextItem;
@@ -148,10 +162,10 @@ static NSArray *layoutList(void) {
 @property NSMenuItem *forgetItem;
 @property NSMenuItem *removePinsItem;
 @property NSString *menuJSON;
-@property NSMenuItem *loginItem;
-@property NSMenuItem *checkUpdatesItem;
-@property NSMenuItem *autoUpdatesItem;
 @property NSMenuItem *updateResultItem;
+@property Settings *settings;
+/* SPUStandardUpdaterController when Sparkle is present, otherwise nil. */
+@property id updaterController;
 @property NSTimer *updateTimer;
 @property NSImage *trayImage;
 @property NSImage *badgeImage;
@@ -161,9 +175,371 @@ static NSArray *layoutList(void) {
 @property NSString *siteTitle;
 @property NSString *siteHost;
 @property NSMenuItem *permissionItem;
+- (void)permission:(id)sender;
+- (void)checkUpdates:(id)sender;
 @end
 
 static Switcher *delegate;
+
+static NSTextField *wrappingLabel(NSString *text) {
+    NSTextField *label = [NSTextField wrappingLabelWithString:text];
+    label.preferredMaxLayoutWidth = 400;
+    return label;
+}
+/* Secondary text in a fixed-width column, so changing it wraps the text
+ * instead of resizing the window. */
+static NSTextField *noteLabel(void) {
+    NSTextField *label = wrappingLabel(@"");
+    label.font = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+    label.textColor = NSColor.secondaryLabelColor;
+    label.preferredMaxLayoutWidth = 260;
+    [label.widthAnchor constraintEqualToConstant:260].active = YES;
+    return label;
+}
+static NSButton *pushButton(NSString *title, id target, SEL action) {
+    NSButton *button = [NSButton buttonWithTitle:title target:target action:action];
+    button.bezelStyle = NSBezelStyleRounded;
+    return button;
+}
+static NSStackView *column(NSArray<NSView *> *views) {
+    NSStackView *stack = [NSStackView stackViewWithViews:views];
+    stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    stack.alignment = NSLayoutAttributeLeading;
+    stack.spacing = 6;
+    return stack;
+}
+/* Label-and-control rows with right-aligned labels, as in System Settings'
+ * older panes. A nil row is a separator across both columns. */
+static NSGridView *form(NSArray *rows) {
+    NSGridView *grid = [[NSGridView alloc] init];
+    grid.rowSpacing = 12;
+    grid.columnSpacing = 8;
+    for (id row in rows) {
+        if (row == NSNull.null) {
+            NSBox *line = [[NSBox alloc] init];
+            line.boxType = NSBoxSeparator;
+            NSGridRow *separator = [grid addRowWithViews:@[ line, NSGridCell.emptyContentView ]];
+            [separator mergeCellsInRange:NSMakeRange(0, 2)];
+            separator.topPadding = separator.bottomPadding = 4;
+            continue;
+        }
+        NSString *title = row[0];
+        NSView *label = title.length ? [NSTextField labelWithString:title]
+                                     : NSGridCell.emptyContentView;
+        [grid addRowWithViews:@[ label, row[1] ]];
+    }
+    [grid columnAtIndex:0].xPlacement = NSGridCellPlacementTrailing;
+    grid.rowAlignment = NSGridRowAlignmentFirstBaseline;
+    return grid;
+}
+/* A cup with a heart, in the outline style of the other tab symbols. */
+static NSImage *donateIcon(void) {
+    NSImage *icon = [NSImage
+         imageWithSize:NSMakeSize(22, 20)
+               flipped:NO
+        drawingHandler:^BOOL(NSRect rect) {
+            (void)rect;
+            [NSColor.blackColor set];
+            NSBezierPath *handle = [NSBezierPath
+                bezierPathWithRoundedRect:NSMakeRect(13.5, 7, 6.5, 7.5)
+                                  xRadius:3.25
+                                  yRadius:3.25];
+            handle.lineWidth = 1.5;
+            [handle stroke];
+            NSRect cup = NSMakeRect(2.5, 3.5, 13.5, 12.5);
+            NSBezierPath *body = [NSBezierPath bezierPathWithRoundedRect:cup
+                                                                 xRadius:4
+                                                                 yRadius:4];
+            // Clear the handle's inner half so it joins the cup's outline.
+            NSGraphicsContext.currentContext.compositingOperation = NSCompositingOperationClear;
+            [body fill];
+            NSGraphicsContext.currentContext.compositingOperation =
+                NSCompositingOperationSourceOver;
+            body.lineWidth = 1.5;
+            [body stroke];
+            // Two lobes and a point, filled separately so their overlap stays solid.
+            CGFloat x = NSMidX(cup), y = NSMidY(cup) + 0.4, r = 2;
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x - 1.6 - r, y + 0.6 - r, 2 * r,
+                                                              2 * r)] fill];
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x + 1.6 - r, y + 0.6 - r, 2 * r,
+                                                              2 * r)] fill];
+            NSBezierPath *point = [NSBezierPath bezierPath];
+            [point moveToPoint:NSMakePoint(x - 3.45, y - 0.1)];
+            [point lineToPoint:NSMakePoint(x + 3.45, y - 0.1)];
+            [point lineToPoint:NSMakePoint(x, y - 3.9)];
+            [point closePath];
+            [point fill];
+            return YES;
+        }];
+    icon.template = YES;
+    icon.accessibilityDescription = @"Donate";
+    return icon;
+}
+static NSImage *symbol(NSString *name, NSString *description) {
+    return [NSImage imageWithSystemSymbolName:name accessibilityDescription:description];
+}
+static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
+    NSViewController *controller = [[NSViewController alloc] init];
+    controller.title = title;
+    NSView *view = [[NSView alloc] init];
+    content.translatesAutoresizingMaskIntoConstraints = NO;
+    [view addSubview:content];
+    [NSLayoutConstraint activateConstraints:@[
+        [content.topAnchor constraintEqualToAnchor:view.topAnchor constant:20],
+        [content.bottomAnchor constraintEqualToAnchor:view.bottomAnchor constant:-20],
+        [content.leadingAnchor constraintGreaterThanOrEqualToAnchor:view.leadingAnchor constant:30],
+        [content.centerXAnchor constraintEqualToAnchor:view.centerXAnchor],
+        [view.widthAnchor constraintEqualToConstant:500],
+    ]];
+    controller.view = view;
+    [view layoutSubtreeIfNeeded];
+    controller.preferredContentSize = view.fittingSize;
+    NSTabViewItem *item = [NSTabViewItem tabViewItemWithViewController:controller];
+    item.image = image;
+    return item;
+}
+
+/* The Settings window: General, Updates, and Donate tabs in a toolbar. */
+@interface Settings : NSObject <NSWindowDelegate>
+@property NSWindow *window;
+@property NSButton *loginBox;
+@property NSTextField *loginNote;
+@property NSTextField *trackingStatus;
+@property NSTextField *trackingNote;
+@property NSTextField *documentStatus;
+@property NSTextField *documentNote;
+@property NSButton *trackingButton;
+@property NSTextField *updatesVersionLabel;
+@property NSButton *autoBox;
+@property NSPopUpButton *interval;
+@property NSTextField *lastChecked;
+@property NSButton *checkNow;
+@property NSArray<NSGridRow *> *sparkleRows;
+@property NSString *configDir;
+/* Rust's latest menu state, which can arrive before the window exists. */
+@property NSDictionary *menu;
+@end
+
+@implementation Settings
+- (id)updater {
+    return [delegate.updaterController valueForKey:@"updater"];
+}
+/* macOS's own "Automatically switch to a document's input source" option. */
+static BOOL documentInputSources(void) {
+    CFPreferencesAppSynchronize(CFSTR("com.apple.HIToolbox"));
+    NSDictionary *properties = CFBridgingRelease(CFPreferencesCopyAppValue(
+        CFSTR("AppleGlobalTextInputProperties"), CFSTR("com.apple.HIToolbox")));
+    return [properties[@"TextInputGlobalPropertyPerContextInput"] boolValue];
+}
+- (NSView *)general {
+    self.loginBox = [NSButton checkboxWithTitle:@"Launch at Login"
+                                         target:self
+                                         action:@selector(toggleLogin:)];
+    self.loginNote = noteLabel();
+    self.trackingStatus = [NSTextField labelWithString:@""];
+    self.trackingNote = noteLabel();
+    self.trackingButton = pushButton(@"", delegate, @selector(permission:));
+    self.documentStatus = [NSTextField labelWithString:@""];
+    self.documentNote = noteLabel();
+    NSButton *inputSources =
+        pushButton(@"Open Input Sources…", self, @selector(openInputSources:));
+    NSStackView *links = [NSStackView stackViewWithViews:@[
+        pushButton(@"GitHub Project", self, @selector(openProject:)),
+        pushButton(@"Configuration Folder", self, @selector(openConfig:)),
+    ]];
+    return form(@[
+        @[ @"Startup:", column(@[ self.loginBox, self.loginNote ]) ],
+        @[
+            @"Window / Tab Tracking:",
+            column(@[ self.trackingStatus, self.trackingNote, self.trackingButton ])
+        ],
+        @[
+            @"macOS Document Switching:",
+            column(@[ self.documentStatus, self.documentNote, inputSources ])
+        ],
+        NSNull.null,
+        @[ @"Links:", links ],
+    ]);
+}
+- (NSView *)updates {
+    self.autoBox = [NSButton checkboxWithTitle:@"Automatically check for updates"
+                                        target:self
+                                        action:@selector(toggleAutomatic:)];
+    self.interval = [[NSPopUpButton alloc] init];
+    for (NSArray *choice in @[ @[ @"Daily", @86400 ], @[ @"Weekly", @604800 ],
+                               @[ @"Monthly", @2592000 ] ]) {
+        [self.interval addItemWithTitle:choice[0]];
+        self.interval.lastItem.tag = [choice[1] integerValue];
+    }
+    self.interval.target = self;
+    self.interval.action = @selector(chooseInterval:);
+    self.lastChecked = [NSTextField labelWithString:@""];
+    self.checkNow = pushButton(@"Check Now…", delegate, @selector(checkUpdates:));
+    self.updatesVersionLabel = [NSTextField labelWithString:@""];
+    NSGridView *grid = form(@[
+        @[ @"Software Update:", self.autoBox ],
+        @[ @"", self.interval ],
+        @[ @"Last checked:", self.lastChecked ],
+        @[ @"", self.checkNow ],
+        NSNull.null,
+        @[ @"Version:", self.updatesVersionLabel ],
+    ]);
+    // Without Sparkle, Rust checks daily and keeps no check history.
+    self.sparkleRows = @[ [grid rowAtIndex:1], [grid rowAtIndex:2] ];
+    return grid;
+}
+- (NSView *)donate {
+    // Ko-fi's logo from the app's asset catalog; a build without one shows a cup.
+    NSImage *logo = [NSImage imageNamed:@"KoFi"];
+    NSImageView *cup;
+    if (logo) {
+        cup = [NSImageView imageViewWithImage:logo];
+        [cup.widthAnchor constraintEqualToConstant:50].active = YES;
+        [cup.heightAnchor constraintEqualToAnchor:cup.widthAnchor
+                                       multiplier:logo.size.height / logo.size.width]
+            .active = YES;
+    } else {
+        NSImageSymbolConfiguration *large =
+            [NSImageSymbolConfiguration configurationWithPointSize:34 weight:NSFontWeightRegular];
+        cup = [NSImageView
+            imageViewWithImage:[[NSImage imageWithSystemSymbolName:@"cup.and.saucer.fill"
+                                           accessibilityDescription:@"Ko-fi"]
+                                   imageWithSymbolConfiguration:large]];
+        cup.contentTintColor = NSColor.controlAccentColor;
+    }
+    cup.imageScaling = NSImageScaleProportionallyUpOrDown;
+    NSButton *support = pushButton(@"Support", self, @selector(openDonate:));
+    support.keyEquivalent = @"\r";
+    NSTextField *name = [NSTextField labelWithString:@"Ko-fi"];
+    name.font = [NSFont boldSystemFontOfSize:NSFont.systemFontSize];
+    NSStackView *kofi = [NSStackView stackViewWithViews:@[ cup, name, support ]];
+    kofi.orientation = NSUserInterfaceLayoutOrientationVertical;
+    kofi.spacing = 8;
+    NSStackView *stack = column(@[
+        wrappingLabel(@"Insomemo is free and open source, and every feature is available to "
+                      @"everyone."),
+        wrappingLabel(@"Donations help keep it developed. If you would like to support the work, "
+                      @"you can buy a coffee on Ko-fi."),
+        kofi,
+    ]);
+    stack.spacing = 16;
+    [stack setCustomSpacing:24 afterView:stack.arrangedSubviews[1]];
+    [kofi.centerXAnchor constraintEqualToAnchor:stack.centerXAnchor].active = YES;
+    return stack;
+}
+- (void)build {
+    NSTabViewController *tabs = [[NSTabViewController alloc] init];
+    tabs.tabStyle = NSTabViewControllerTabStyleToolbar;
+    [tabs addTabViewItem:pane(@"General", symbol(@"gearshape", @"General"), [self general])];
+    [tabs addTabViewItem:pane(@"Updates", symbol(@"arrow.triangle.2.circlepath", @"Updates"),
+                              [self updates])];
+    [tabs addTabViewItem:pane(@"Donate", donateIcon(), [self donate])];
+    self.window = [NSWindow windowWithContentViewController:tabs];
+    self.window.styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable;
+    self.window.releasedWhenClosed = NO;
+    self.window.delegate = self;
+    [self.window center];
+}
+- (void)show {
+    if (!self.window)
+        [self build];
+    [self refresh:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+    [self.window makeKeyAndOrderFront:nil];
+}
+- (void)windowDidBecomeKey:(NSNotification *)notification {
+    [self refresh:nil];
+}
+/* Updates the controls from Rust's menu state; nil reuses the last state. */
+- (void)refresh:(NSDictionary *)menu {
+    if (menu)
+        self.menu = menu;
+    menu = self.menu;
+    if (!self.window)
+        return;
+    if (menu) {
+        NSString *login = menu[@"login"];
+        BOOL supported = login && ![login isEqualToString:@"unsupported"];
+        self.loginBox.enabled = supported;
+        self.loginBox.state = [login isEqualToString:@"on"] || [login isEqualToString:@"approval"]
+                                  ? NSControlStateValueOn
+                                  : NSControlStateValueOff;
+        self.loginNote.stringValue =
+            !supported ? @"Requires macOS 13 or newer and the Insomemo app."
+            : [login isEqualToString:@"approval"]
+                ? @"Approve Insomemo in System Settings → General → Login Items."
+                : @"";
+        self.loginNote.hidden = !self.loginNote.stringValue.length;
+        self.autoBox.state = [menu[@"auto_updates"] boolValue] ? NSControlStateValueOn
+                                                               : NSControlStateValueOff;
+        NSString *version = menu[@"version"] ?: @"";
+        self.updatesVersionLabel.stringValue = version;
+        self.configDir = menu[@"config_dir"];
+        // Rust's own check, without Sparkle, runs one request at a time.
+        self.checkNow.enabled = ![menu[@"update_checking"] boolValue];
+    }
+    BOOL trusted = AXIsProcessTrusted();
+    self.trackingStatus.stringValue = trusted ? @"On" : @"Off";
+    self.trackingNote.stringValue =
+        trusted ? @"Layouts are remembered for each window and tab."
+                : @"Layouts are remembered for each app only. Grant Accessibility access to "
+                  @"tell windows and tabs apart.";
+    self.trackingButton.title = trusted ? @"Open Privacy Settings…" : @"Grant Access…";
+    BOOL documents = documentInputSources();
+    self.documentStatus.stringValue = documents ? @"On" : @"Off";
+    self.documentNote.stringValue =
+        documents ? @"macOS's “Automatically switch to a document's input source” is on. It "
+                    @"switches layouts too, so the two compete; turn it off to let Insomemo "
+                    @"choose."
+                  : @"macOS's “Automatically switch to a document's input source” is off, as "
+                    @"it should be. It keeps one layout per document window, only in apps "
+                    @"that support it. Insomemo learns per window, tab, site, and app in "
+                    @"every app.";
+    id updater = [self updater];
+    for (NSGridRow *row in self.sparkleRows)
+        row.hidden = !updater;
+    if (updater) {
+        NSInteger interval = [[updater valueForKey:@"updateCheckInterval"] integerValue];
+        [self.interval selectItemWithTag:interval];
+        if (self.interval.indexOfSelectedItem < 0)
+            [self.interval selectItemAtIndex:0];
+        self.interval.enabled = self.autoBox.state == NSControlStateValueOn;
+        NSDate *date = [updater valueForKey:@"lastUpdateCheckDate"];
+        self.lastChecked.stringValue =
+            date ? [NSDateFormatter localizedStringFromDate:date
+                                                  dateStyle:NSDateFormatterMediumStyle
+                                                  timeStyle:NSDateFormatterMediumStyle]
+                 : @"Never";
+    }
+}
+- (void)toggleLogin:(id)sender {
+    emit(@"login-toggle", @"", @"");
+}
+- (void)toggleAutomatic:(id)sender {
+    emit(@"auto-updates", @"", @"");
+}
+- (void)chooseInterval:(NSPopUpButton *)sender {
+    [[self updater] setValue:@((double)sender.selectedTag) forKey:@"updateCheckInterval"];
+}
+- (void)openProject:(id)sender {
+    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:ProjectURL]];
+}
+- (void)openConfig:(id)sender {
+    if (self.configDir.length)
+        [NSWorkspace.sharedWorkspace openURL:[NSURL fileURLWithPath:self.configDir
+                                                         isDirectory:YES]];
+}
+- (void)openInputSources:(id)sender {
+    // The Keyboard settings' input source sheet, where macOS's own option is;
+    // this older form of the link also works in macOS 12's System Preferences.
+    [NSWorkspace.sharedWorkspace
+        openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.keyboard?"
+                                     @"InputSources"]];
+}
+- (void)openDonate:(id)sender {
+    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:DonateURL]];
+}
+@end
 static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringRef notification,
                        void *context);
 
@@ -185,6 +561,19 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     dispatch_resume(self.interruptSignal);
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    Class sparkle = NSClassFromString(@"SPUStandardUpdaterController");
+    if (sparkle)
+        self.updaterController = [[sparkle alloc] initWithStartingUpdater:YES
+                                                          updaterDelegate:nil
+                                                       userDriverDelegate:self];
+    self.settings = [[Settings alloc] init];
+    // Accessory apps have no visible menu bar, but its key equivalents still
+    // work, so Command-W closes the Settings window.
+    NSMenu *mainMenu = [[NSMenu alloc] init];
+    NSMenu *appMenu = [[NSMenu alloc] init];
+    [appMenu addItemWithTitle:@"Close Window" action:@selector(performClose:) keyEquivalent:@"w"];
+    [mainMenu addItemWithTitle:@"Insomemo" action:nil keyEquivalent:@""].submenu = appMenu;
+    NSApp.mainMenu = mainMenu;
     self.status = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
     self.status.autosaveName = @"dev.insomemo.app.status";
     self.status.button.title = @"";
@@ -244,22 +633,15 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                                           action:@selector(permission:)
                                    keyEquivalent:@""];
     self.permissionItem.target = self;
-    self.loginItem = [menu addItemWithTitle:@"Launch at Login"
-                                     action:@selector(toggleLogin:)
-                              keyEquivalent:@""];
-    self.loginItem.target = self;
-    self.loginItem.hidden = YES;
-    self.checkUpdatesItem = [menu addItemWithTitle:@"Check for Updates…"
-                                               action:@selector(checkUpdates:)
-                                        keyEquivalent:@""];
-    self.checkUpdatesItem.target = self;
-    self.autoUpdatesItem = [menu addItemWithTitle:@"Automatically Check for Updates"
-                                              action:@selector(toggleAutoUpdates:)
-                                       keyEquivalent:@""];
-    self.autoUpdatesItem.target = self;
-    self.updateResultItem = [menu addItemWithTitle:@"" action:@selector(openUpdates:) keyEquivalent:@""];
+    self.updateResultItem = [menu addItemWithTitle:@""
+                                            action:@selector(openUpdates:)
+                                     keyEquivalent:@""];
     self.updateResultItem.target = self;
     self.updateResultItem.hidden = YES;
+    NSMenuItem *settings = [menu addItemWithTitle:@"Settings…"
+                                           action:@selector(showSettings:)
+                                    keyEquivalent:@","];
+    settings.target = self;
     [menu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *quit = [menu addItemWithTitle:@"Quit" action:@selector(quit:) keyEquivalent:@"q"];
     quit.target = self;
@@ -298,9 +680,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 // window tracking when it changes.
 - (void)refreshTrust {
     BOOL trusted = AXIsProcessTrusted();
-    self.permissionItem.title =
-        trusted ? @"Window / Tab Tracking" : @"Enable Window / Tab Tracking…";
-    self.permissionItem.state = trusted ? NSControlStateValueOn : NSControlStateValueOff;
+    // Once granted, the permission's state lives in Settings.
+    self.permissionItem.hidden = trusted;
+    [self.settings refresh:nil];
     if (trusted == self.trusted)
         return;
     self.trusted = trusted;
@@ -455,12 +837,32 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 - (void)forget:(NSMenuItem *)sender {
     emit(@"forget", sender.representedObject, @"");
 }
-- (void)toggleLogin:(id)sender {
-    emit(@"login-toggle", @"", @"");
+- (void)checkUpdates:(id)sender {
+    if (self.updaterController)
+        [self.updaterController checkForUpdates:sender];
+    else
+        emit(@"check-updates-manual", @"", @"");
 }
-- (void)checkUpdates:(id)sender { emit(@"check-updates-manual", @"", @""); }
-- (void)toggleAutoUpdates:(id)sender { emit(@"auto-updates", @"", @""); }
-- (void)openUpdates:(id)sender { emit(@"open-updates", @"", @""); }
+- (void)openUpdates:(id)sender {
+    emit(@"open-updates", @"", @"");
+}
+- (void)showSettings:(id)sender {
+    [self.settings show];
+}
+// Opening the app again from Finder or Spotlight while it runs shows Settings.
+- (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)visible {
+    [self.settings show];
+    return NO;
+}
+// Sparkle's user driver: a menu-bar app has no Dock icon to badge, so a
+// scheduled update is shown in its own window right away.
+- (BOOL)supportsGentleScheduledUpdateReminders {
+    return YES;
+}
+- (BOOL)standardUserDriverShouldHandleShowingScheduledUpdate:(id)update
+                                        andInImmediateFocus:(BOOL)immediateFocus {
+    return YES;
+}
 - (void)removePins:(id)sender {
     emit(@"clear-pins", @"", @"");
 }
@@ -569,21 +971,12 @@ static void updateScopeMenus(NSString *json) {
         pins ? [NSString stringWithFormat:@"Remove All Pins (%lu)", (unsigned long)pins]
              : @"Remove All Pins";
     delegate.removePinsItem.enabled = pins > 0;
-    delegate.autoUpdatesItem.state = [menu[@"auto_updates"] boolValue]
-                                         ? NSControlStateValueOn : NSControlStateValueOff;
-    delegate.checkUpdatesItem.enabled = ![menu[@"update_checking"] boolValue];
-    NSString *updateLabel = menu[@"update_label"] ?: @"";
+    // Rust's check result; Sparkle shows its own windows instead.
+    NSString *updateLabel = delegate.updaterController ? @"" : menu[@"update_label"] ?: @"";
     delegate.updateResultItem.title = updateLabel;
     delegate.updateResultItem.hidden = !updateLabel.length;
     delegate.updateResultItem.enabled = [menu[@"update_available"] boolValue];
-    NSString *login = menu[@"login"];
-    delegate.loginItem.hidden = !login || [login isEqualToString:@"unsupported"];
-    delegate.loginItem.state =
-        [login isEqualToString:@"on"] ? NSControlStateValueOn : NSControlStateValueOff;
-    delegate.loginItem.title = [login isEqualToString:@"approval"]
-                                   ? @"Launch at Login (Approve in System Settings…)"
-                                   : @"Launch at Login";
-
+    [delegate.settings refresh:menu];
 }
 
 void native_update(const char *context, int paused, const char *error, const char *layouts_json,
@@ -681,18 +1074,28 @@ void native_show_update_result(const char *message) {
     [NSApp activateIgnoringOtherApps:YES];
     [alert runModal];
 }
-void native_set_update_checks(int enabled) {
+int native_set_update_checks(int enabled) {
+    if (delegate.updaterController) {
+        // Sparkle keeps its own schedule; state.json stays the setting's source.
+        [[delegate.updaterController valueForKey:@"updater"]
+            setValue:@(enabled != 0)
+              forKey:@"automaticallyChecksForUpdates"];
+        return 1;
+    }
     [delegate.updateTimer invalidate];
     delegate.updateTimer = nil;
-    if (!enabled) return;
+    if (!enabled)
+        return 0;
     delegate.updateTimer = [NSTimer timerWithTimeInterval:86400 repeats:YES block:^(NSTimer *timer) {
         (void)timer;
         emit(@"check-updates", @"", @"");
     }];
     [[NSRunLoop mainRunLoop] addTimer:delegate.updateTimer forMode:NSRunLoopCommonModes];
+    return 0;
 }
 void native_open_updates_page(void) {
-    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:@"https://github.com/vantalter/insomemo/releases"]];
+    NSString *releases = [ProjectURL stringByAppendingString:@"/releases"];
+    [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:releases]];
 }
 void native_schedule_save(void) {
     [delegate.saveTimer invalidate];

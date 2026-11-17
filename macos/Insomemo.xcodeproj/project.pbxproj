@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		1A0000000000000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000101 /* main.swift */; };
 		1A0000000000000000000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000102 /* Assets.xcassets */; };
+		1A0000000000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000000000000000000901 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +26,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A0000000000000000000003 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,6 +78,9 @@
 			dependencies = (
 			);
 			name = Insomemo;
+			packageProductDependencies = (
+				1A0000000000000000000901 /* Sparkle */,
+			);
 			productName = Insomemo;
 			productReference = 1A0000000000000000000100 /* Insomemo.app */;
 			productType = "com.apple.product-type.application";
@@ -98,6 +103,9 @@
 				Base,
 			);
 			mainGroup = 1A0000000000000000000300;
+			packageReferences = (
+				1A0000000000000000000900 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			productRefGroup = 1A0000000000000000000302 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -193,6 +201,10 @@
 				INFOPLIST_FILE = Insomemo/Info.plist;
 				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/version.h";
 				INFOPLIST_PREPROCESS = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				OTHER_LDFLAGS = (
 					"$(DERIVED_FILE_DIR)/libinsomemo.a",
 					"-liconv",
@@ -224,6 +236,10 @@
 				INFOPLIST_FILE = Insomemo/Info.plist;
 				INFOPLIST_PREFIX_HEADER = "$(DERIVED_FILE_DIR)/version.h";
 				INFOPLIST_PREPROCESS = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				OTHER_LDFLAGS = (
 					"$(DERIVED_FILE_DIR)/libinsomemo.a",
 					"-liconv",
@@ -265,6 +281,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1A0000000000000000000900 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A0000000000000000000901 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A0000000000000000000900 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1A0000000000000000000600 /* Project object */;
 }

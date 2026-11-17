@@ -24,7 +24,7 @@ cargo build --release --locked
 dbus-run-session -- xvfb-run -a cargo test --release --test smoke_linux -- --ignored
 ```
 
-On macOS, also run `make app` and launch `dist/Insomemo.app`. It builds through the Xcode project and links the release configuration, which catches problems that `cargo build` does not.
+On macOS, also run `make app`, then `scripts/check-macos-app.sh`, and launch `dist/Insomemo.app`. The build goes through the Xcode project and links the release configuration, which catches problems that `cargo build` does not; the check confirms the app's version, Sparkle settings, and signatures, as CI does.
 
 Native code follows [.clang-format](.clang-format), with a 100-column limit.
 
