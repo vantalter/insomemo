@@ -82,7 +82,7 @@ The app lives in the menu bar, without a Dock icon. Its monochrome stacked-keybo
 
 To place Insomemo beside the macOS input-source icon, hold **Command** and drag the Insomemo icon there. The status item has a stable macOS autosave name so the system can retain its identity across launches. If the system input-source icon is hidden, Insomemo remains in its normal menu-bar position. macOS does not provide a supported API to position this app automatically relative to that system icon.
 
-Open its menu and select **Enable Window / Tab Tracking…**, then grant **Accessibility** access in System Settings → Privacy & Security → Accessibility. Until granted, application-level tracking works, but titles are unavailable. Once granted, tracking starts without a restart and the menu item disappears; **Settings → General** shows the permission's state, and its **Open Privacy Settings…** button opens the Accessibility settings, where the permission can be turned off. macOS ties the permission to the app's signature. `make app` signs with your Apple Development certificate when one is installed, so the permission survives rebuilds; without one, the build is ad-hoc signed, macOS treats every rebuild as a new app, and you must grant the permission again (remove the old Insomemo entry first). Keep the bundle at a stable path. Once release signing is configured, release builds are signed with a Developer ID and notarized, so the grant survives updates.
+Window and tab tracking needs **Accessibility** access. On the first launch without it, Insomemo opens **Settings → General**, which explains the permission; choose **Grant Access…** there and turn on Insomemo in System Settings → Privacy & Security → Accessibility. Until granted, application-level tracking works, but titles are unavailable, and the menu shows **Window / Tab Tracking Is Off — Open Settings…**, which leads back to the same place. Once granted, tracking starts without a restart and the menu line disappears; **Settings → General** shows the permission's state, and its **Open Privacy Settings…** button opens the Accessibility settings, where the permission can be turned off. macOS ties the permission to the app's signature. `make app` signs with your Apple Development certificate when one is installed, so the permission survives rebuilds; without one, the build is ad-hoc signed, macOS treats every rebuild as a new app, and you must grant the permission again (remove the old Insomemo entry first). Keep the bundle at a stable path. Once release signing is configured, release builds are signed with a Developer ID and notarized, so the grant survives updates.
 
 The standalone executable is `target/release/insomemo`. To run it in a terminal:
 
@@ -231,13 +231,13 @@ Choose **Launch at Login** in **Settings → General** on macOS or in the tray m
 
 ## Troubleshooting
 
-**macOS: the menu still says "Enable Window / Tab Tracking…" although Insomemo is switched on in System Settings.** macOS ties the Accessibility permission to the app's signature. Release builds are not yet signed with a Developer ID, so each update, like each ad-hoc local build, is a new app to macOS; the existing switch belongs to the previous version and no longer applies. Remove the stale entry and grant the permission again:
+**macOS: Window / Tab Tracking is off although Insomemo is switched on in System Settings.** macOS ties the Accessibility permission to the app's signature. Releases up to 0.2.10 were ad-hoc signed, and the first release signed with a Developer ID, like each ad-hoc local build, is a new app to macOS; the existing switch belongs to the previous version and no longer applies. Remove the stale entry and grant the permission again:
 
 ```sh
 tccutil reset Accessibility dev.insomemo.app
 ```
 
-Then choose **Enable Window / Tab Tracking…** in Insomemo's menu and turn on the new entry. Within a second the menu item disappears and tracking starts, without a restart.
+Then choose **Grant Access…** in **Settings → General** and turn on the new entry. Within a second Settings shows **On** and tracking starts, without a restart. Later Developer ID releases keep the permission.
 
 **macOS: Insomemo's icon looks like coloured stripes in System Settings' privacy lists.** Versions up to 0.2.3 stored the small icon sizes in a format those lists misread. Install a newer version, then clear macOS's icon cache in Terminal and restart the Mac:
 

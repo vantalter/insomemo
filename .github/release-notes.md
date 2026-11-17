@@ -14,10 +14,10 @@ Insomemo remembers your keyboard layout per window, tab, and conversation on Lin
 ## Install
 
 <!-- signed -->
-**macOS:** open the `.dmg` and drag Insomemo onto the Applications shortcut. The app is signed with a Developer ID and notarized by Apple, so it opens normally. Then choose **Enable Window / Tab Tracking…** in its menu and grant Accessibility access. To start Insomemo automatically, open **Settings…** in its menu and turn on **Launch at Login** once the app is in `/Applications`; the login item points at the app's current location. Later versions install themselves from **Settings → Updates**.
+**macOS:** open the `.dmg` and drag Insomemo onto the Applications shortcut. The app is signed with a Developer ID and notarized by Apple, so it opens normally. Insomemo then opens **Settings → General**; choose **Grant Access…** to allow window and tab tracking. To start Insomemo automatically, open **Settings…** in its menu and turn on **Launch at Login** once the app is in `/Applications`; the login item points at the app's current location. Later versions install themselves from **Settings → Updates**.
 <!-- /signed -->
 <!-- unsigned -->
-**macOS:** open the `.dmg` and drag Insomemo onto the Applications shortcut. This build is not yet notarized, so macOS blocks the first launch. On macOS 15 or newer, open it once, then choose **Open Anyway** in System Settings → Privacy & Security. On macOS 12–14, right-click the app and choose **Open**. Alternatively, run `xattr -d com.apple.quarantine /Applications/Insomemo.app`. Then choose **Enable Window / Tab Tracking…** in its menu and grant Accessibility access. To start Insomemo automatically, open **Settings…** in its menu and turn on **Launch at Login** once the app is in `/Applications`; the login item points at the app's current location. Later versions install themselves from **Settings → Updates**.
+**macOS:** open the `.dmg` and drag Insomemo onto the Applications shortcut. This build is not yet notarized, so macOS blocks the first launch. On macOS 15 or newer, open it once, then choose **Open Anyway** in System Settings → Privacy & Security. On macOS 12–14, right-click the app and choose **Open**. Alternatively, run `xattr -d com.apple.quarantine /Applications/Insomemo.app`. Insomemo then opens **Settings → General**; choose **Grant Access…** to allow window and tab tracking. To start Insomemo automatically, open **Settings…** in its menu and turn on **Launch at Login** once the app is in `/Applications`; the login item points at the app's current location. Later versions install themselves from **Settings → Updates**.
 <!-- /unsigned -->
 
 **Debian, Ubuntu:** `sudo apt install ./insomemo_*_amd64.deb` (or `arm64`). **Fedora, openSUSE:** `sudo dnf install ./insomemo-*.x86_64.rpm` (or `zypper install`, or `aarch64`). The package manager installs GLib, json-glib, libX11, libxkbcommon, GdkPixbuf, and curl, and Insomemo appears in your application menu. **Other distributions:** extract the tarball, install those libraries and curl, and copy `insomemo` to `~/.local/bin`.
@@ -31,7 +31,7 @@ Insomemo does not read keystrokes. Its optional update check contacts GitHub onl
 ## Known limitations
 
 <!-- unsigned -->
-- This macOS build is ad-hoc signed, so after updating, macOS treats it as a new app. If the menu still says **Enable Window / Tab Tracking…**, run `tccutil reset Accessibility dev.insomemo.app` and grant the permission again (see the README's Troubleshooting section).
+- This macOS build is ad-hoc signed, so after updating, macOS treats it as a new app. If **Settings → General** still shows Window / Tab Tracking as off, run `tccutil reset Accessibility dev.insomemo.app` and grant the permission again (see the README's Troubleshooting section).
 <!-- /unsigned -->
 - Sway and Hyprland support is experimental: IPC handling is tested, but real desktops have not been validated.
 - GNOME and KDE on Wayland are not supported.

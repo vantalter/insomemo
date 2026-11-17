@@ -23,6 +23,8 @@ static void emit(NSString *kind, NSString *first, NSString *second) {
 
 static NSString *const ProjectURL = @"https://github.com/vantalter/insomemo";
 static NSString *const DonateURL = @"https://ko-fi.com/vantalter";
+/* The menu's warning while Accessibility is missing; choosing it opens Settings. */
+static NSString *const TrustWarning = @"Window / Tab Tracking Is Off — Open Settings…";
 
 static NSString *sourceID(TISInputSourceRef source) {
     return source
@@ -174,7 +176,6 @@ static NSArray *layoutList(void) {
 // Last site read from observedWindow and the title it was read under.
 @property NSString *siteTitle;
 @property NSString *siteHost;
-@property NSMenuItem *permissionItem;
 - (void)permission:(id)sender;
 - (void)checkUpdates:(id)sender;
 @end
@@ -596,7 +597,10 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     menu.delegate = self;
     self.contextItem = [menu addItemWithTitle:@"Active Context: —" action:nil keyEquivalent:@""];
     self.contextItem.enabled = NO;
-    self.errorItem = [menu addItemWithTitle:@"" action:nil keyEquivalent:@""];
+    self.errorItem = [menu addItemWithTitle:@""
+                                     action:@selector(showGeneral:)
+                                keyEquivalent:@""];
+    self.errorItem.target = self;
     self.errorItem.enabled = NO;
     self.errorItem.hidden = YES;
     [menu addItem:[NSMenuItem separatorItem]];
@@ -629,10 +633,6 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     self.removePinsItem.target = self;
     self.removePinsItem.enabled = NO;
     [menu addItem:[NSMenuItem separatorItem]];
-    self.permissionItem = [menu addItemWithTitle:@"Enable Window / Tab Tracking…"
-                                          action:@selector(permission:)
-                                   keyEquivalent:@""];
-    self.permissionItem.target = self;
     self.updateResultItem = [menu addItemWithTitle:@""
                                             action:@selector(openUpdates:)
                                      keyEquivalent:@""];
@@ -675,13 +675,18 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     [self activated:nil];
     [self refreshTrust];
     [self reportTrust];
+    // Without Accessibility, Insomemo remembers layouts per app only. Settings
+    // explains this and offers access once, on the first launch without it.
+    NSString *shown = @"ShowedTrackingSettings";
+    if (!self.trusted && ![NSUserDefaults.standardUserDefaults boolForKey:shown]) {
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:shown];
+        [self showGeneral:nil];
+    }
 }
-// Shows the current Accessibility permission in the menu and starts or stops
-// window tracking when it changes.
+// Follows the Accessibility permission in Settings and the menu's warning, and
+// starts or stops window tracking when it changes.
 - (void)refreshTrust {
     BOOL trusted = AXIsProcessTrusted();
-    // Once granted, the permission's state lives in Settings.
-    self.permissionItem.hidden = trusted;
     [self.settings refresh:nil];
     if (trusted == self.trusted)
         return;
@@ -697,10 +702,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
                    });
 }
 - (void)reportTrust {
-    emit(@"warning",
-         self.trusted ? @""
-                      : @"App tracking active. Grant Accessibility access for window/tab tracking.",
-         @"");
+    emit(@"warning", self.trusted ? @"" : TrustWarning, @"");
 }
 - (void)removeObserver {
     if (self.observer)
@@ -849,6 +851,11 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 - (void)showSettings:(id)sender {
     [self.settings show];
 }
+- (void)showGeneral:(id)sender {
+    [self.settings show];
+    ((NSTabViewController *)self.settings.window.contentViewController).selectedTabViewItemIndex =
+        0;
+}
 // Opening the app again from Finder or Spotlight while it runs shows Settings.
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)visible {
     [self.settings show];
@@ -990,6 +997,8 @@ void native_update(const char *context, int paused, const char *error, const cha
     delegate.pauseItem.title = paused ? @"Resume Auto-Switching" : @"Pause Auto-Switching";
     delegate.errorItem.title = @(error);
     delegate.errorItem.hidden = strlen(error) == 0;
+    // Errors are information only; the Accessibility warning leads to Settings.
+    delegate.errorItem.enabled = [delegate.errorItem.title isEqualToString:TrustWarning];
     NSString *json = @(layouts_json);
     if (![delegate.layoutsJSON isEqualToString:json]) {
         delegate.layoutsJSON = json;
