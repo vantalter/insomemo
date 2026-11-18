@@ -540,6 +540,28 @@ static BOOL documentInputSources(void) {
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:DonateURL]];
 }
 @end
+
+/* Shows a menu item as a line of information: a plain label in the secondary
+ * colour, aligned with the item titles, as Apple's own menu bar extras show
+ * status. macOS dims a disabled item's text whatever its colour, but not a
+ * custom view. */
+static void showInfo(NSMenuItem *item, NSString *text) {
+    if (item.view && [item.title isEqualToString:text])
+        return;
+    item.title = text;
+    NSTextField *label = [NSTextField labelWithString:text];
+    label.font = [NSFont menuFontOfSize:0];
+    label.textColor = NSColor.secondaryLabelColor;
+    [label sizeToFit];
+    // Leaves room for the checkmark column, so the text lines up with titles.
+    CGFloat leading = 17, trailing = 16, height = 22;
+    NSView *view = [[NSView alloc]
+        initWithFrame:NSMakeRect(0, 0, ceil(label.frame.size.width) + leading + trailing, height)];
+    [label setFrameOrigin:NSMakePoint(leading, floor((height - label.frame.size.height) / 2))];
+    [view addSubview:label];
+    item.view = view;
+}
+
 static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringRef notification,
                        void *context);
 
@@ -594,8 +616,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Insomemo"];
     menu.autoenablesItems = NO;
     menu.delegate = self;
-    self.contextItem = [menu addItemWithTitle:@"Active Context: —" action:nil keyEquivalent:@""];
+    self.contextItem = [menu addItemWithTitle:@"" action:nil keyEquivalent:@""];
     self.contextItem.enabled = NO;
+    showInfo(self.contextItem, @"Active Context: —");
     self.errorItem = [menu addItemWithTitle:@"" action:nil keyEquivalent:@""];
     self.errorItem.enabled = NO;
     self.errorItem.hidden = YES;
@@ -986,9 +1009,9 @@ void native_update(const char *context, int paused, const char *error, const cha
     delegate.status.button.appearsDisabled = paused;
     delegate.status.button.toolTip =
         [NSString stringWithFormat:@"Insomemo%@ — %@", paused ? @" (Paused)" : @"", @(context)];
-    delegate.contextItem.title = [@"Active Context: " stringByAppendingString:@(context)];
+    showInfo(delegate.contextItem, [@"Active Context: " stringByAppendingString:@(context)]);
     delegate.pauseItem.title = paused ? @"Resume Auto-Switching" : @"Pause Auto-Switching";
-    delegate.errorItem.title = @(error);
+    showInfo(delegate.errorItem, @(error));
     delegate.errorItem.hidden = strlen(error) == 0;
     NSString *json = @(layouts_json);
     if (![delegate.layoutsJSON isEqualToString:json]) {
