@@ -651,16 +651,23 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
            selector:@selector(activated:)
                name:NSWorkspaceDidActivateApplicationNotification
              object:nil];
+    // AppKit suspends distributed notifications while the app is inactive once
+    // it has been active, as after Settings was open. Insomemo is inactive
+    // nearly always, so layout changes must arrive at once: a coalesced one
+    // arrives late, is learned for whatever context is active by then, and
+    // leaves the remembered current layout stale, which skips restores.
     [[NSDistributedNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(layoutChanged:)
                name:(__bridge NSString *)kTISNotifySelectedKeyboardInputSourceChanged
-             object:nil];
+             object:nil
+ suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
     [[NSDistributedNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(layoutsChanged:)
                name:(__bridge NSString *)kTISNotifyEnabledKeyboardInputSourcesChanged
-             object:nil];
+             object:nil
+ suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
     // Posted whenever any app's Accessibility permission changes in System
     // Settings, so the menu and tracking follow it without polling.
     [[NSDistributedNotificationCenter defaultCenter]
