@@ -16,10 +16,12 @@ value() {
 }
 
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
-# Sparkle compares CFBundleVersion, so both must follow Cargo.toml.
-for key in CFBundleShortVersionString CFBundleVersion; do
-    [ "$(value $key)" = "$version" ] || fail "$key is '$(value $key)', expected $version"
-done
+# Both follow Cargo.toml; CFBundleVersion, which Sparkle compares, in the form
+# bundle-version.sh gives it.
+[ "$(value CFBundleShortVersionString)" = "$version" ] ||
+    fail "CFBundleShortVersionString is '$(value CFBundleShortVersionString)', expected $version"
+bundle=$("$root/scripts/bundle-version.sh" "$version")
+[ "$(value CFBundleVersion)" = "$bundle" ] || fail "CFBundleVersion is '$(value CFBundleVersion)', expected $bundle"
 # Info.plist is preprocessed, where an unguarded "//" would start a comment.
 feed=https://github.com/vantalter/insomemo/releases/latest/download/appcast.xml
 [ "$(value SUFeedURL)" = "$feed" ] || fail "SUFeedURL is '$(value SUFeedURL)'"
