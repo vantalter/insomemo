@@ -22,8 +22,16 @@ curl -sSfL "https://github.com/sparkle-project/Sparkle/releases/download/$sparkl
 signature=$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$tools/bin/sign_update" --ed-key-file - "$archive")
 
 # The update window lists the commits since the previous release.
-previous=$(git -C "$root" describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-notes=$(git -C "$root" log --no-merges --format=%s ${previous:+"$previous..HEAD"} |
+previous=$("$root/scripts/previous-tag.sh" "$version")
+# A merged pull request's own title is the first line of the message body.
+notes=$(git -C "$root" log --no-merges --format=%H ${previous:+"$previous..HEAD"} |
+    while read -r commit; do
+        subject=$(git -C "$root" log -1 --format=%s "$commit")
+        case "$subject" in
+        ("Merge pull request "*) git -C "$root" log -1 --format=%b "$commit" | sed '/^$/d' | head -1 ;;
+        (*) echo "$subject" ;;
+        esac
+    done |
     grep -v '^Release [0-9]' |
     sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's|.*|<li>&</li>|')
 
