@@ -166,6 +166,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The generated notes start at the previous release tag.
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -188,5 +191,8 @@ jobs:
           if [ "${{ needs.macos.outputs.signed }}" = "true" ]; then drop=unsigned; else drop=signed; fi
           sed -e "/<!-- $drop -->/,/<!-- \/$drop -->/d" -e '/^<!-- \/*\(un\)*signed -->$/d' \
             ../.github/release-notes.md > ../release-notes.md
+          # A final release lists everything since the previous final release,
+          # not just the changes since its last release candidate.
+          previous=$(../scripts/previous-tag.sh "$VERSION")
           gh release create "$GITHUB_REF_NAME" * $prerelease --generate-notes \
-            --title "Insomemo $VERSION" --notes-file ../release-notes.md
+            ${previous:+--notes-start-tag "$previous"} --title "Insomemo $VERSION" --notes-file ../release-notes.md
