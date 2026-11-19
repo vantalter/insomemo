@@ -29,5 +29,5 @@ version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 # Sparkle installs only updates signed with the private half of this key.
 key=$(cat macos/sparkle-public-key 2>/dev/null || true)
 [ -n "$key" ] || echo "warning: macos/sparkle-public-key is missing; Sparkle cannot verify updates"
-printf '#define INSOMEMO_VERSION %s\n#define INSOMEMO_SPARKLE_PUBLIC_KEY %s\n' "$version" "$key" \
-    > "$DERIVED_FILE_DIR/version.h"
+printf '#define INSOMEMO_VERSION %s\n#define INSOMEMO_BUNDLE_VERSION %s\n#define INSOMEMO_SPARKLE_PUBLIC_KEY %s\n' \
+    "$version" "$(scripts/bundle-version.sh "$version")" "$key" > "$DERIVED_FILE_DIR/version.h"

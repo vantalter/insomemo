@@ -44,7 +44,7 @@ cat <<EOF
     <item>
       <title>Insomemo $version</title>
       <pubDate>$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
-      <sparkle:version>$version</sparkle:version>
+      <sparkle:version>$("$root/scripts/bundle-version.sh" "$version")</sparkle:version>
       <sparkle:shortVersionString>$version</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
       <sparkle:fullReleaseNotesLink>$repository/releases/tag/v$version</sparkle:fullReleaseNotesLink>
