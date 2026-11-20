@@ -6,8 +6,87 @@
 #import <CommonCrypto/CommonDigest.h>
 #import <ServiceManagement/ServiceManagement.h>
 #include <signal.h>
+#include <stdarg.h>
+#include <sys/time.h>
+
+/* Event log for diagnosing switching problems, off by default and turned on in
+ * Settings → General. It writes ~/Library/Logs/Insomemo.log. Titles and sites
+ * appear only as short hashes, so the log can be shared. */
+static NSString *const DebugLogKey = @"DebugLog";
+static FILE *debugFile;
+static NSString *debugLogPath(void) {
+    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
+}
+static void debugLog(const char *format, ...) __attribute__((format(printf, 1, 2)));
+static void debugLog(const char *format, ...) {
+    if (!debugFile)
+        return;
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    struct tm local;
+    localtime_r(&now.tv_sec, &local);
+    char stamp[32];
+    strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", &local);
+    fprintf(debugFile, "%s.%03d ", stamp, (int)(now.tv_usec / 1000));
+    va_list arguments;
+    va_start(arguments, format);
+    vfprintf(debugFile, format, arguments);
+    va_end(arguments);
+    fputc('\n', debugFile);
+    fflush(debugFile);
+}
+/* Opens or closes the log to match the setting. */
+static void updateDebugLog(void) {
+    BOOL enabled = [NSUserDefaults.standardUserDefaults boolForKey:DebugLogKey];
+    if (!enabled && debugFile) {
+        debugLog("log off");
+        fclose(debugFile);
+        debugFile = NULL;
+    }
+    if (!enabled || debugFile)
+        return;
+    NSString *path = debugLogPath();
+    [NSFileManager.defaultManager createDirectoryAtPath:path.stringByDeletingLastPathComponent
+                            withIntermediateDirectories:YES
+                                             attributes:nil
+                                                  error:NULL];
+    // Past 1 MB the log starts over, keeping the previous one beside it.
+    NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:path
+                                                                              error:NULL];
+    if (attributes.fileSize > 1024 * 1024)
+        rename(path.fileSystemRepresentation,
+               [path stringByAppendingString:@".old"].fileSystemRepresentation);
+    debugFile = fopen(path.fileSystemRepresentation, "a");
+    NSString *version = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"];
+    debugLog("log on, Insomemo %s, macOS %s", (version ?: @"(no bundle)").UTF8String,
+             NSProcessInfo.processInfo.operatingSystemVersionString.UTF8String);
+}
+/* Deletes the log and the previous one; logging, if on, continues in a new file. */
+static void clearDebugLog(void) {
+    if (debugFile) {
+        fclose(debugFile);
+        debugFile = NULL;
+    }
+    NSString *path = debugLogPath();
+    [NSFileManager.defaultManager removeItemAtPath:path error:NULL];
+    [NSFileManager.defaultManager removeItemAtPath:[path stringByAppendingString:@".old"]
+                                             error:NULL];
+    updateDebugLog();
+}
+/* A short, stable stand-in for a title or site; "-" when there is none. */
+static const char *debugHash(NSString *text) {
+    if (!text.length)
+        return "-";
+    char hash[17];
+    native_hash(text.UTF8String, hash);
+    hash[8] = 0;
+    // Each call gets its own string, so one log line can hold several hashes.
+    return @(hash).UTF8String;
+}
 
 static void emit(NSString *kind, NSString *first, NSString *second) {
+    if (![kind isEqualToString:@"layouts"] && ![kind isEqualToString:@"flush"])
+        debugLog("event %s %s", kind.UTF8String, (first ?: @"").UTF8String);
     switcher_event(kind.UTF8String, (first ?: @"").UTF8String, (second ?: @"").UTF8String);
 }
 
@@ -310,6 +389,9 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
 @property NSTextField *documentStatus;
 @property NSTextField *documentNote;
 @property NSButton *trackingButton;
+@property NSButton *debugBox;
+@property NSButton *showLog;
+@property NSButton *clearLog;
 @property NSTextField *updatesVersionLabel;
 @property NSButton *autoBox;
 @property NSPopUpButton *interval;
@@ -344,6 +426,15 @@ static BOOL documentInputSources(void) {
     self.documentNote = noteLabel();
     NSButton *inputSources =
         pushButton(@"Open Input Sources…", self, @selector(openInputSources:));
+    self.debugBox = [NSButton checkboxWithTitle:@"Record switching events"
+                                         target:self
+                                         action:@selector(toggleDebugLog:)];
+    NSTextField *debugNote = noteLabel();
+    debugNote.stringValue = @"Writes ~/Library/Logs/Insomemo.log for bug reports. Window titles "
+                            @"and sites appear only as short codes, never as text.";
+    self.showLog = pushButton(@"Show Log", self, @selector(showDebugLog:));
+    self.clearLog = pushButton(@"Clear Log", self, @selector(clearDebugLog:));
+    NSStackView *logButtons = [NSStackView stackViewWithViews:@[ self.showLog, self.clearLog ]];
     NSStackView *links = [NSStackView stackViewWithViews:@[
         pushButton(@"GitHub Project", self, @selector(openProject:)),
         pushButton(@"Configuration Folder", self, @selector(openConfig:)),
@@ -358,6 +449,7 @@ static BOOL documentInputSources(void) {
             @"macOS Document Switching:",
             column(@[ self.documentStatus, self.documentNote, inputSources ])
         ],
+        @[ @"Debug Log:", column(@[ self.debugBox, debugNote, logButtons ]) ],
         NSNull.null,
         @[ @"Links:", links ],
     ]);
@@ -496,6 +588,12 @@ static BOOL documentInputSources(void) {
                     @"it should be. It keeps one layout per document window, only in apps "
                     @"that support it. Insomemo learns per window, tab, site, and app in "
                     @"every app.";
+    self.debugBox.state = debugFile ? NSControlStateValueOn : NSControlStateValueOff;
+    BOOL logged = [NSFileManager.defaultManager fileExistsAtPath:debugLogPath()];
+    self.showLog.enabled = logged;
+    self.clearLog.enabled =
+        logged || [NSFileManager.defaultManager
+                      fileExistsAtPath:[debugLogPath() stringByAppendingString:@".old"]];
     id updater = [self updater];
     for (NSGridRow *row in self.sparkleRows)
         row.hidden = !updater;
@@ -529,6 +627,21 @@ static BOOL documentInputSources(void) {
     if (self.configDir.length)
         [NSWorkspace.sharedWorkspace openURL:[NSURL fileURLWithPath:self.configDir
                                                          isDirectory:YES]];
+}
+- (void)toggleDebugLog:(NSButton *)sender {
+    [NSUserDefaults.standardUserDefaults setBool:sender.state == NSControlStateValueOn
+                                          forKey:DebugLogKey];
+    updateDebugLog();
+    debugLog("accessibility %s", AXIsProcessTrusted() ? "granted" : "missing");
+    [self refresh:nil];
+}
+- (void)showDebugLog:(id)sender {
+    [NSWorkspace.sharedWorkspace
+        activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:debugLogPath()] ]];
+}
+- (void)clearDebugLog:(id)sender {
+    clearDebugLog();
+    [self refresh:nil];
 }
 - (void)openInputSources:(id)sender {
     // The Keyboard settings' input source sheet, where macOS's own option is;
@@ -677,6 +790,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
              object:nil
  suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
     self.trusted = AXIsProcessTrusted();
+    debugLog("accessibility %s", self.trusted ? "granted" : "missing");
     emit(@"ready", @"", @"");
     [self layoutChanged:nil];
     [self activated:nil];
@@ -698,6 +812,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     if (trusted == self.trusted)
         return;
     self.trusted = trusted;
+    debugLog("accessibility %s", trusted ? "granted" : "missing");
     [self reportTrust];
     [self activated:nil];
 }
@@ -738,6 +853,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     BOOL trusted = AXIsProcessTrusted();
     if (trusted != self.trusted) {
         self.trusted = trusted;
+        debugLog("accessibility %s", trusted ? "granted" : "missing");
         [self reportTrust];
     }
     if (self.trusted) {
@@ -821,6 +937,8 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
             }
         }
     }
+    debugLog("context %s window=%s title=%s site=%s", identifier.UTF8String,
+             windowID.length ? windowID.UTF8String : "-", debugHash(title), debugHash(site));
     switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String,
                      site.UTF8String);
 }
@@ -923,6 +1041,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 int native_run(int event_fd) {
     (void)event_fd;
     @autoreleasepool {
+        updateDebugLog();
         delegate = [[Switcher alloc] init];
         [delegate installSignalHandlers];
         NSApplication *app = [NSApplication sharedApplication];
@@ -943,6 +1062,7 @@ int native_set_layout(const char *id) {
             TISSelectInputSource((TISInputSourceRef)CFArrayGetValueAtIndex(sources, 0)) == noErr;
         if (sources)
             CFRelease(sources);
+        debugLog("select %s %s", id, success ? "ok" : "failed");
         return success;
     }
 }
