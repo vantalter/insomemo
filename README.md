@@ -78,7 +78,7 @@ The app is an Xcode project, [macos/Insomemo.xcodeproj](macos/Insomemo.xcodeproj
 
 The app lives in the menu bar, without a Dock icon. Its monochrome stacked-keyboard symbol automatically renders white or dark to match the macOS menu bar. The tray is icon-only; the OS input menu shows the current language. Pausing dims the macOS icon while keeping its menu available. The purple macOS app icon uses the same keyboard mark with a static switch dot; source artwork and preparation notes are in [assets](assets/README.md).
 
-**Settings…** (⌘,) in the menu opens a small window with three tabs: **General** (Launch at Login, Window / Tab Tracking, whether macOS's own document input switching is on, and links to the project and the configuration folder), **Updates** (with the version), and **Donate**. Opening Insomemo again from Finder or Spotlight while it runs also opens Settings.
+**Settings…** (⌘,) in the menu opens a small window with three tabs: **General** (Launch at Login, Window / Tab Tracking, whether macOS's own document input switching is on, the debug log, and links to the project and the configuration folder), **Updates** (with the version), and **Donate**. Opening Insomemo again from Finder or Spotlight while it runs also opens Settings.
 
 To place Insomemo beside the macOS input-source icon, hold **Command** and drag the Insomemo icon there. The status item has a stable macOS autosave name so the system can retain its identity across launches. If the system input-source icon is hidden, Insomemo remains in its normal menu-bar position. macOS does not provide a supported API to position this app automatically relative to that system icon.
 
@@ -245,6 +245,10 @@ Then choose **Grant Access…** in **Settings → General** and turn on the new 
 sudo rm -rf /Library/Caches/com.apple.iconservices.store
 rm -rf "$(getconf DARWIN_USER_CACHE_DIR)com.apple.iconservices"
 ```
+
+**macOS: switching misbehaves now and then, and you want to report it.** In **Settings → General**, turn on **Record switching events** under **Debug Log**, then use Insomemo until the problem happens again. Logging starts at once, without a restart.
+
+The log, `~/Library/Logs/Insomemo.log`, lists each focused app and window, layout change, and layout Insomemo selected, with timestamps. Window titles and web sites appear only as short hashes, so the log is safe to attach to an issue. **Show Log** reveals it in Finder, and **Clear Log** deletes it. It starts over past 1 MB, keeping the previous log as `Insomemo.log.old`. Turn the setting off when you are done.
 
 ## Native references
 
