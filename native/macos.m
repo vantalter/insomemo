@@ -16,6 +16,8 @@ static NSString *const DebugLogKey = @"DebugLog";
 /* Past this size the log starts over, keeping the previous one beside it. */
 static const long DebugLogLimit = 1024 * 1024;
 static FILE *debugFile;
+/* What the last context line recorded, so repeats of it are skipped. */
+static NSString *loggedContext;
 static void updateDebugLog(void);
 static NSString *debugLogPath(void) {
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
@@ -65,6 +67,8 @@ static void updateDebugLog(void) {
         rename(path.fileSystemRepresentation,
                [path stringByAppendingString:@".old"].fileSystemRepresentation);
     debugFile = fopen(path.fileSystemRepresentation, "a");
+    // A new file starts with the current context, even if it has not changed.
+    loggedContext = nil;
     NSString *version = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"];
     debugLog("log on, Insomemo %s, macOS %s", (version ?: @"(no bundle)").UTF8String,
              NSProcessInfo.processInfo.operatingSystemVersionString.UTF8String);
@@ -968,8 +972,16 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
         return;
     }
     self.waitedForTitle = NO;
-    debugLog("context %s window=%s title=%s site=%s", identifier.UTF8String,
-             windowID.length ? windowID.UTF8String : "-", debugHash(title), debugHash(site));
+    // Focus moving within a window repeats its context, and a window tracked by
+    // identity, as in Ghostty, keeps it while its title changes, so neither is
+    // logged again.
+    NSString *logged = [NSString stringWithFormat:@"%@ %@ %@ %@", identifier, windowID,
+                                                  windowID.length ? @"" : title, site];
+    if (debugFile && ![logged isEqualToString:loggedContext]) {
+        loggedContext = logged;
+        debugLog("context %s window=%s title=%s site=%s", identifier.UTF8String,
+                 windowID.length ? windowID.UTF8String : "-", debugHash(title), debugHash(site));
+    }
     switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String,
                      site.UTF8String);
 }
