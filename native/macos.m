@@ -255,6 +255,8 @@ static NSArray *layoutList(void) {
 // Last site read from observedWindow and the title it was read under.
 @property NSString *siteTitle;
 @property NSString *siteHost;
+// Whether the current window was already given time to report its title.
+@property BOOL waitedForTitle;
 - (void)permission:(id)sender;
 - (void)checkUpdates:(id)sender;
 @end
@@ -265,6 +267,8 @@ static Switcher *delegate;
 static NSString *selectedLayout;
 static CFAbsoluteTime selectedAt;
 static const CFTimeInterval SelectionSettleTime = 0.15;
+/* How long a window may take to report its title; most need under 0.3 s. */
+static const CFTimeInterval TitleWaitTime = 0.3;
 
 static NSTextField *wrappingLabel(NSString *text) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
@@ -855,6 +859,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
         return;
     [self removeObserver];
     self.activeApp = app;
+    self.waitedForTitle = NO;
     BOOL trusted = AXIsProcessTrusted();
     if (trusted != self.trusted) {
         self.trusted = trusted;
@@ -881,6 +886,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     [self readContext];
 }
 - (void)readContext {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                             selector:@selector(readContext)
+                                               object:nil];
     // Ignore stale queued AX notifications after another application is focused.
     if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier !=
         self.activeApp.processIdentifier)
@@ -942,6 +950,16 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
             }
         }
     }
+    // A new window or tab often has no title for a moment. Switching for it
+    // would switch again once the title arrives, so it gets a short wait; a
+    // window still untitled after that is taken as it is.
+    if (self.observedApp && !title.length && !windowID.length && !self.waitedForTitle) {
+        self.waitedForTitle = YES;
+        debugLog("context %s untitled, waiting", identifier.UTF8String);
+        [self performSelector:@selector(readContext) withObject:nil afterDelay:TitleWaitTime];
+        return;
+    }
+    self.waitedForTitle = NO;
     debugLog("context %s window=%s title=%s site=%s", identifier.UTF8String,
              windowID.length ? windowID.UTF8String : "-", debugHash(title), debugHash(site));
     switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String,
