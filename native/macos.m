@@ -13,7 +13,10 @@
  * Settings → General. It writes ~/Library/Logs/Insomemo.log. Titles and sites
  * appear only as short hashes, so the log can be shared. */
 static NSString *const DebugLogKey = @"DebugLog";
+/* Past this size the log starts over, keeping the previous one beside it. */
+static const long DebugLogLimit = 1024 * 1024;
 static FILE *debugFile;
+static void updateDebugLog(void);
 static NSString *debugLogPath(void) {
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
 }
@@ -34,6 +37,12 @@ static void debugLog(const char *format, ...) {
     va_end(arguments);
     fputc('\n', debugFile);
     fflush(debugFile);
+    // Insomemo can run for weeks, so the size is also checked while writing.
+    if (ftell(debugFile) > DebugLogLimit) {
+        fclose(debugFile);
+        debugFile = NULL;
+        updateDebugLog();
+    }
 }
 /* Opens or closes the log to match the setting. */
 static void updateDebugLog(void) {
@@ -50,10 +59,9 @@ static void updateDebugLog(void) {
                             withIntermediateDirectories:YES
                                              attributes:nil
                                                   error:NULL];
-    // Past 1 MB the log starts over, keeping the previous one beside it.
     NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:path
                                                                               error:NULL];
-    if (attributes.fileSize > 1024 * 1024)
+    if ((long long)attributes.fileSize > DebugLogLimit)
         rename(path.fileSystemRepresentation,
                [path stringByAppendingString:@".old"].fileSystemRepresentation);
     debugFile = fopen(path.fileSystemRepresentation, "a");
