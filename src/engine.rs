@@ -1,8 +1,12 @@
 use crate::config::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 pub const CAPACITY: usize = 200;
+/// A layout replaced sooner than this was passed through, as when cycling
+/// through input sources, rather than chosen.
+pub const SETTLE_TIME: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Entry {
@@ -75,6 +79,13 @@ pub struct Context {
     pub site_key: Option<String>,
 }
 
+/// A manual layout change not yet learned.
+struct Choice {
+    context: Context,
+    layout: String,
+    at: Instant,
+}
+
 pub struct Engine {
     pub config: Config,
     pub state: State,
@@ -83,6 +94,8 @@ pub struct Engine {
     pub paused: bool,
     pub dirty: bool,
     pending: Option<String>,
+    /// The latest manual change, learned once it settles; see `settle`.
+    unsettled: Option<Choice>,
     /// Session-only contexts keyed by window identity; bounded like `state.entries`.
     windows: BTreeMap<String, Entry>,
     /// Pins on session-only contexts, which cannot be persisted either.
@@ -111,6 +124,7 @@ impl Engine {
             paused: false,
             dirty: false,
             pending: None,
+            unsettled: None,
             windows: BTreeMap::new(),
             window_pins: BTreeMap::new(),
             clock,
@@ -137,6 +151,7 @@ impl Engine {
         site: &str,
     ) -> Option<String> {
         if app.is_empty() {
+            self.settle();
             self.active = None;
             self.pending = None;
             return None;
@@ -173,6 +188,8 @@ impl Engine {
         if unchanged {
             return None;
         }
+        // Moving on keeps the last choice made in the previous context.
+        self.settle();
         self.pending = None;
         let session_pin = if session {
             self.window_pins.get(&key)
@@ -242,6 +259,12 @@ impl Engine {
     }
 
     pub fn layout_changed(&mut self, layout: &str) -> bool {
+        self.layout_changed_at(layout, Instant::now())
+    }
+
+    /// Notes a layout change. A manual one is learned later, by `settle`,
+    /// unless another replaces it within `SETTLE_TIME`.
+    pub fn layout_changed_at(&mut self, layout: &str, now: Instant) -> bool {
         if layout.is_empty() || layout == self.current_layout {
             return false;
         }
@@ -257,17 +280,41 @@ impl Engine {
         let Some(context) = self.active.clone() else {
             return false;
         };
+        if let Some(previous) = self.unsettled.take()
+            && now.duration_since(previous.at) >= SETTLE_TIME
+        {
+            self.learn(previous);
+        }
+        self.unsettled = Some(Choice {
+            context,
+            layout: layout.into(),
+            at: now,
+        });
+        true
+    }
+
+    /// Learns the latest manual change. Called when focus moves on, before
+    /// saving, and before actions that read or change what was learned.
+    pub fn settle(&mut self) {
+        if let Some(choice) = self.unsettled.take() {
+            self.learn(choice);
+        }
+    }
+
+    fn learn(&mut self, choice: Choice) {
+        let Choice {
+            context, layout, ..
+        } = choice;
         // The first manual choice establishes an app fallback. Later choices in
         // a title-tracked context do not overwrite that fallback for other tabs.
         if !self.state.entries.contains_key(&context.app) {
-            self.remember(context.app, layout, false);
+            self.remember(context.app, &layout, false);
         }
         // A site follows its latest choice, so new pages on it start there.
         if let Some(site_key) = context.site_key {
-            self.remember(site_key, layout, false);
+            self.remember(site_key, &layout, false);
         }
-        self.remember(context.key, layout, context.session);
-        true
+        self.remember(context.key, &layout, context.session);
     }
 
     fn remember(&mut self, key: String, layout: &str, session: bool) {
@@ -293,6 +340,7 @@ impl Engine {
     }
 
     pub fn toggle_pause(&mut self) -> Option<String> {
+        self.settle();
         self.paused = !self.paused;
         self.pending = None;
         if !self.paused
@@ -309,6 +357,8 @@ impl Engine {
     }
 
     pub fn force_default(&mut self, layout: &str) -> Option<String> {
+        // The explicit choice replaces a manual change not yet learned.
+        self.unsettled = None;
         self.state.default_layout = Some(layout.into());
         // Explicit override for the current context and its application's default.
         if let Some(context) = self.active.clone() {
@@ -381,6 +431,7 @@ impl Engine {
     /// Removes the learned layout for `scope`; pins are unaffected.
     /// Returns whether persistent state changed.
     pub fn forget(&mut self, scope: Scope) -> bool {
+        self.settle();
         let Some((key, session)) = self.scope_key(scope) else {
             return false;
         };
@@ -404,6 +455,7 @@ impl Engine {
         self.windows.clear();
         self.state.default_layout = None;
         self.pending = None;
+        self.unsettled = None;
         self.dirty = true;
     }
 }
@@ -505,7 +557,35 @@ mod tests {
         assert_eq!(e.focus("app", ""), Some("ua".into()));
         e.selected("ua", false);
         assert!(e.layout_changed("de"));
+        e.settle();
         assert_eq!(e.state.entries["app"].layout, "de");
+    }
+
+    #[test]
+    fn layouts_passed_through_while_cycling_are_not_learned() {
+        let mut e = engine();
+        let start = Instant::now();
+        e.focus("terminal", "one");
+        e.layout_changed_at("ru", start);
+        e.layout_changed_at("ua", start + Duration::from_millis(300));
+        e.focus("terminal", "two");
+        assert!(e.state.entries.values().all(|entry| entry.layout == "ua"));
+        // The first choice in the app became its fallback, so new tabs use it.
+        assert_eq!(e.state.entries["terminal"].layout, "ua");
+    }
+
+    #[test]
+    fn layouts_kept_for_a_while_are_learned_when_replaced() {
+        let mut e = engine();
+        let start = Instant::now();
+        e.focus("terminal", "one");
+        e.layout_changed_at("ua", start);
+        e.layout_changed_at("de", start + SETTLE_TIME);
+        // The app fallback keeps the first choice, which was held.
+        assert_eq!(e.state.entries["terminal"].layout, "ua");
+        assert_eq!(e.focus("terminal", "two"), Some("ua".into()));
+        e.selected("ua", true);
+        assert_eq!(e.focus("terminal", "one"), Some("de".into()));
     }
 
     #[test]
@@ -519,6 +599,7 @@ mod tests {
         e.selected("ua", true);
         e.focus("new", "");
         e.layout_changed("de");
+        e.settle();
         assert_eq!(e.state.entries.len(), CAPACITY);
         assert!(e.state.entries.contains_key("app0"));
         assert!(!e.state.entries.contains_key("app1"));

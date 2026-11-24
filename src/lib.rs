@@ -185,6 +185,8 @@ fn flush() {
         let Some(app) = borrow.as_mut() else {
             return;
         };
+        // A manual change still waiting to settle is the latest choice.
+        app.engine.settle();
         if app.engine.dirty {
             match app.store.save(&app.engine.state) {
                 Ok(()) => {
