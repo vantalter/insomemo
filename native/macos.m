@@ -13,7 +13,12 @@
  * Settings → General. It writes ~/Library/Logs/Insomemo.log. Titles and sites
  * appear only as short hashes, so the log can be shared. */
 static NSString *const DebugLogKey = @"DebugLog";
+/* Past this size the log starts over, keeping the previous one beside it. */
+static const long DebugLogLimit = 1024 * 1024;
 static FILE *debugFile;
+/* What the last context line recorded, so repeats of it are skipped. */
+static NSString *loggedContext;
+static void updateDebugLog(void);
 static NSString *debugLogPath(void) {
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
 }
@@ -34,6 +39,12 @@ static void debugLog(const char *format, ...) {
     va_end(arguments);
     fputc('\n', debugFile);
     fflush(debugFile);
+    // Insomemo can run for weeks, so the size is also checked while writing.
+    if (ftell(debugFile) > DebugLogLimit) {
+        fclose(debugFile);
+        debugFile = NULL;
+        updateDebugLog();
+    }
 }
 /* Opens or closes the log to match the setting. */
 static void updateDebugLog(void) {
@@ -50,13 +61,14 @@ static void updateDebugLog(void) {
                             withIntermediateDirectories:YES
                                              attributes:nil
                                                   error:NULL];
-    // Past 1 MB the log starts over, keeping the previous one beside it.
     NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:path
                                                                               error:NULL];
-    if (attributes.fileSize > 1024 * 1024)
+    if ((long long)attributes.fileSize > DebugLogLimit)
         rename(path.fileSystemRepresentation,
                [path stringByAppendingString:@".old"].fileSystemRepresentation);
     debugFile = fopen(path.fileSystemRepresentation, "a");
+    // A new file starts with the current context, even if it has not changed.
+    loggedContext = nil;
     NSString *version = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"];
     debugLog("log on, Insomemo %s, macOS %s", (version ?: @"(no bundle)").UTF8String,
              NSProcessInfo.processInfo.operatingSystemVersionString.UTF8String);
@@ -255,11 +267,20 @@ static NSArray *layoutList(void) {
 // Last site read from observedWindow and the title it was read under.
 @property NSString *siteTitle;
 @property NSString *siteHost;
+// Whether the current window was already given time to report its title.
+@property BOOL waitedForTitle;
 - (void)permission:(id)sender;
 - (void)checkUpdates:(id)sender;
 @end
 
 static Switcher *delegate;
+/* The layout Insomemo last selected and when, to tell macOS's late reports of
+ * the previous layout from the user's own changes. */
+static NSString *selectedLayout;
+static CFAbsoluteTime selectedAt;
+static const CFTimeInterval SelectionSettleTime = 0.15;
+/* How long a window may take to report its title; most need under 0.3 s. */
+static const CFTimeInterval TitleWaitTime = 0.3;
 
 static NSTextField *wrappingLabel(NSString *text) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
@@ -850,6 +871,7 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
         return;
     [self removeObserver];
     self.activeApp = app;
+    self.waitedForTitle = NO;
     BOOL trusted = AXIsProcessTrusted();
     if (trusted != self.trusted) {
         self.trusted = trusted;
@@ -876,6 +898,9 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     [self readContext];
 }
 - (void)readContext {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                             selector:@selector(readContext)
+                                               object:nil];
     // Ignore stale queued AX notifications after another application is focused.
     if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier !=
         self.activeApp.processIdentifier)
@@ -937,16 +962,48 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
             }
         }
     }
-    debugLog("context %s window=%s title=%s site=%s", identifier.UTF8String,
-             windowID.length ? windowID.UTF8String : "-", debugHash(title), debugHash(site));
+    // A new window or tab often has no title for a moment. Switching for it
+    // would switch again once the title arrives, so it gets a short wait; a
+    // window still untitled after that is taken as it is.
+    if (self.observedApp && !title.length && !windowID.length && !self.waitedForTitle) {
+        self.waitedForTitle = YES;
+        debugLog("context %s untitled, waiting", identifier.UTF8String);
+        [self performSelector:@selector(readContext) withObject:nil afterDelay:TitleWaitTime];
+        return;
+    }
+    self.waitedForTitle = NO;
+    // Focus moving within a window repeats its context, and a window tracked by
+    // identity, as in Ghostty, keeps it while its title changes, so neither is
+    // logged again.
+    NSString *logged = [NSString stringWithFormat:@"%@ %@ %@ %@", identifier, windowID,
+                                                  windowID.length ? @"" : title, site];
+    if (debugFile && ![logged isEqualToString:loggedContext]) {
+        loggedContext = logged;
+        debugLog("context %s window=%s title=%s site=%s", identifier.UTF8String,
+                 windowID.length ? windowID.UTF8String : "-", debugHash(title), debugHash(site));
+    }
     switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String,
                      site.UTF8String);
 }
 - (void)layoutChanged:(NSNotification *)notification {
     TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();
-    emit(@"layout", sourceID(source), @"");
+    NSString *layout = sourceID(source);
     if (source)
         CFRelease(source);
+    // Just after Insomemo selects a layout, macOS can still report the one
+    // before it for a few milliseconds. That is not the user's choice, so it
+    // is checked again once the selection has settled.
+    CFTimeInterval settled = selectedAt + SelectionSettleTime - CFAbsoluteTimeGetCurrent();
+    if (settled > 0 && ![layout isEqualToString:selectedLayout]) {
+        debugLog("layout %s ignored, %s was just selected", layout.UTF8String,
+                 selectedLayout.UTF8String);
+        [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                                 selector:@selector(layoutChanged:)
+                                                   object:nil];
+        [self performSelector:@selector(layoutChanged:) withObject:nil afterDelay:settled];
+        return;
+    }
+    emit(@"layout", layout, @"");
 }
 - (void)layoutsChanged:(NSNotification *)notification {
     emit(@"layouts", @"", @"");
@@ -1062,6 +1119,10 @@ int native_set_layout(const char *id) {
             TISSelectInputSource((TISInputSourceRef)CFArrayGetValueAtIndex(sources, 0)) == noErr;
         if (sources)
             CFRelease(sources);
+        if (success) {
+            selectedLayout = @(id);
+            selectedAt = CFAbsoluteTimeGetCurrent();
+        }
         debugLog("select %s %s", id, success ? "ok" : "failed");
         return success;
     }
