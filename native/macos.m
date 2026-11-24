@@ -508,9 +508,8 @@ static BOOL documentInputSources(void) {
     NSImageView *cup;
     if (logo) {
         cup = [NSImageView imageViewWithImage:logo];
-        [cup.widthAnchor constraintEqualToConstant:50].active = YES;
-        [cup.heightAnchor constraintEqualToAnchor:cup.widthAnchor
-                                       multiplier:logo.size.height / logo.size.width]
+        [cup.widthAnchor constraintEqualToAnchor:cup.heightAnchor
+                                      multiplier:logo.size.width / logo.size.height]
             .active = YES;
     } else {
         NSImageSymbolConfiguration *large =
@@ -522,6 +521,8 @@ static BOOL documentInputSources(void) {
         cup.contentTintColor = NSColor.controlAccentColor;
     }
     cup.imageScaling = NSImageScaleProportionallyUpOrDown;
+    // Both images get the same height, so the headings and buttons below line up.
+    [cup.heightAnchor constraintEqualToConstant:40].active = YES;
     NSImageSymbolConfiguration *large =
         [NSImageSymbolConfiguration configurationWithPointSize:38 weight:NSFontWeightRegular];
     NSImageView *star = [NSImageView
@@ -529,12 +530,14 @@ static BOOL documentInputSources(void) {
                                           accessibilityDescription:@"GitHub star"]
                                imageWithSymbolConfiguration:large]];
     star.contentTintColor = NSColor.labelColor;
+    star.imageScaling = NSImageScaleProportionallyUpOrDown;
+    [star.heightAnchor constraintEqualToConstant:40].active = YES;
     NSTextField *(^heading)(NSString *) = ^NSTextField *(NSString *text) {
         NSTextField *label = [NSTextField labelWithString:text];
         label.font = [NSFont boldSystemFontOfSize:NSFont.systemFontSize];
         return label;
     };
-    NSButton *starButton = pushButton(@"Star", self, @selector(openProject:));
+    NSButton *starButton = pushButton(@"Open GitHub", self, @selector(openProject:));
     NSButton *coffeeButton = pushButton(@"Donate", self, @selector(openDonate:));
     [starButton.widthAnchor constraintEqualToConstant:150].active = YES;
     [coffeeButton.widthAnchor constraintEqualToAnchor:starButton.widthAnchor].active = YES;
