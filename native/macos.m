@@ -373,7 +373,7 @@ static NSImage *donateIcon(void) {
             return YES;
         }];
     icon.template = YES;
-    icon.accessibilityDescription = @"Donate";
+    icon.accessibilityDescription = @"Support";
     return icon;
 }
 static NSImage *symbol(NSString *name, NSString *description) {
@@ -400,7 +400,7 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
     return item;
 }
 
-/* The Settings window: General, Updates, and Donate tabs in a toolbar. */
+/* The Settings window: General, Updates, and Support tabs in a toolbar. */
 @interface Settings : NSObject <NSWindowDelegate>
 @property NSWindow *window;
 @property NSButton *loginBox;
@@ -502,7 +502,7 @@ static BOOL documentInputSources(void) {
     self.sparkleRows = @[ [grid rowAtIndex:1], [grid rowAtIndex:2] ];
     return grid;
 }
-- (NSView *)donate {
+- (NSView *)support {
     // Ko-fi's logo from the app's asset catalog; a build without one shows a cup.
     NSImage *logo = [NSImage imageNamed:@"KoFi"];
     NSImageView *cup;
@@ -522,23 +522,45 @@ static BOOL documentInputSources(void) {
         cup.contentTintColor = NSColor.controlAccentColor;
     }
     cup.imageScaling = NSImageScaleProportionallyUpOrDown;
-    NSButton *support = pushButton(@"Support", self, @selector(openDonate:));
-    support.keyEquivalent = @"\r";
-    NSTextField *name = [NSTextField labelWithString:@"Ko-fi"];
-    name.font = [NSFont boldSystemFontOfSize:NSFont.systemFontSize];
-    NSStackView *kofi = [NSStackView stackViewWithViews:@[ cup, name, support ]];
-    kofi.orientation = NSUserInterfaceLayoutOrientationVertical;
-    kofi.spacing = 8;
+    NSImageSymbolConfiguration *large =
+        [NSImageSymbolConfiguration configurationWithPointSize:38 weight:NSFontWeightRegular];
+    NSImageView *star = [NSImageView
+        imageViewWithImage:[[NSImage imageWithSystemSymbolName:@"star"
+                                          accessibilityDescription:@"GitHub star"]
+                               imageWithSymbolConfiguration:large]];
+    star.contentTintColor = NSColor.labelColor;
+    NSTextField *(^heading)(NSString *) = ^NSTextField *(NSString *text) {
+        NSTextField *label = [NSTextField labelWithString:text];
+        label.font = [NSFont boldSystemFontOfSize:NSFont.systemFontSize];
+        return label;
+    };
+    NSButton *starButton = pushButton(@"Star", self, @selector(openProject:));
+    NSButton *coffeeButton = pushButton(@"Donate", self, @selector(openDonate:));
+    [starButton.widthAnchor constraintEqualToConstant:150].active = YES;
+    [coffeeButton.widthAnchor constraintEqualToAnchor:starButton.widthAnchor].active = YES;
+    NSStackView *(^option)(NSArray<NSView *> *) = ^NSStackView *(NSArray<NSView *> *views) {
+        NSStackView *group = [NSStackView stackViewWithViews:views];
+        group.orientation = NSUserInterfaceLayoutOrientationVertical;
+        group.alignment = NSLayoutAttributeCenterX;
+        group.spacing = 10;
+        return group;
+    };
+    NSStackView *github = option(@[ star, heading(@"Star on GitHub"), starButton ]);
+    NSStackView *kofi = option(@[ cup, heading(@"Buy a coffee"), coffeeButton ]);
+    NSStackView *choices = [NSStackView stackViewWithViews:@[ github, kofi ]];
+    choices.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    choices.alignment = NSLayoutAttributeTop;
+    choices.distribution = NSStackViewDistributionFillEqually;
+    choices.spacing = 24;
     NSStackView *stack = column(@[
-        wrappingLabel(@"Insomemo is free and open source, and every feature is available to "
-                      @"everyone."),
-        wrappingLabel(@"Donations help keep it developed. If you would like to support the work, "
-                      @"you can buy a coffee on Ko-fi."),
-        kofi,
+        wrappingLabel(@"Insomemo is free and open source. Every feature is available to everyone."),
+        wrappingLabel(@"If you find it useful, star the project on GitHub or support its "
+                      @"development with a coffee on Ko-fi."),
+        choices,
     ]);
     stack.spacing = 16;
-    [stack setCustomSpacing:24 afterView:stack.arrangedSubviews[1]];
-    [kofi.centerXAnchor constraintEqualToAnchor:stack.centerXAnchor].active = YES;
+    [stack setCustomSpacing:26 afterView:stack.arrangedSubviews[1]];
+    [choices.widthAnchor constraintEqualToConstant:380].active = YES;
     return stack;
 }
 - (void)build {
@@ -547,7 +569,7 @@ static BOOL documentInputSources(void) {
     [tabs addTabViewItem:pane(@"General", symbol(@"gearshape", @"General"), [self general])];
     [tabs addTabViewItem:pane(@"Updates", symbol(@"arrow.triangle.2.circlepath", @"Updates"),
                               [self updates])];
-    [tabs addTabViewItem:pane(@"Donate", donateIcon(), [self donate])];
+    [tabs addTabViewItem:pane(@"Support", donateIcon(), [self support])];
     self.window = [NSWindow windowWithContentViewController:tabs];
     self.window.styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable;
     self.window.releasedWhenClosed = NO;
