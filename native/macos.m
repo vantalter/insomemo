@@ -333,8 +333,9 @@ static NSGridView *form(NSArray *rows) {
     grid.rowAlignment = NSGridRowAlignmentFirstBaseline;
     return grid;
 }
-/* A cup with a heart, in the outline style of the other tab symbols. */
-static NSImage *donateIcon(void) {
+/* The Support tab's icon: a cup with a heart, in the outline style of the
+ * other tab symbols. */
+static NSImage *supportIcon(void) {
     NSImage *icon = [NSImage
          imageWithSize:NSMakeSize(22, 20)
                flipped:NO
@@ -572,7 +573,7 @@ static BOOL documentInputSources(void) {
     [tabs addTabViewItem:pane(@"General", symbol(@"gearshape", @"General"), [self general])];
     [tabs addTabViewItem:pane(@"Updates", symbol(@"arrow.triangle.2.circlepath", @"Updates"),
                               [self updates])];
-    [tabs addTabViewItem:pane(@"Support", donateIcon(), [self support])];
+    [tabs addTabViewItem:pane(@"Support", supportIcon(), [self support])];
     self.window = [NSWindow windowWithContentViewController:tabs];
     self.window.styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable;
     self.window.releasedWhenClosed = NO;
