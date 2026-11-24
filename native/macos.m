@@ -260,6 +260,11 @@ static NSArray *layoutList(void) {
 @end
 
 static Switcher *delegate;
+/* The layout Insomemo last selected and when, to tell macOS's late reports of
+ * the previous layout from the user's own changes. */
+static NSString *selectedLayout;
+static CFAbsoluteTime selectedAt;
+static const CFTimeInterval SelectionSettleTime = 0.15;
 
 static NSTextField *wrappingLabel(NSString *text) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
@@ -944,9 +949,23 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
 }
 - (void)layoutChanged:(NSNotification *)notification {
     TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();
-    emit(@"layout", sourceID(source), @"");
+    NSString *layout = sourceID(source);
     if (source)
         CFRelease(source);
+    // Just after Insomemo selects a layout, macOS can still report the one
+    // before it for a few milliseconds. That is not the user's choice, so it
+    // is checked again once the selection has settled.
+    CFTimeInterval settled = selectedAt + SelectionSettleTime - CFAbsoluteTimeGetCurrent();
+    if (settled > 0 && ![layout isEqualToString:selectedLayout]) {
+        debugLog("layout %s ignored, %s was just selected", layout.UTF8String,
+                 selectedLayout.UTF8String);
+        [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                                 selector:@selector(layoutChanged:)
+                                                   object:nil];
+        [self performSelector:@selector(layoutChanged:) withObject:nil afterDelay:settled];
+        return;
+    }
+    emit(@"layout", layout, @"");
 }
 - (void)layoutsChanged:(NSNotification *)notification {
     emit(@"layouts", @"", @"");
@@ -1062,6 +1081,10 @@ int native_set_layout(const char *id) {
             TISSelectInputSource((TISInputSourceRef)CFArrayGetValueAtIndex(sources, 0)) == noErr;
         if (sources)
             CFRelease(sources);
+        if (success) {
+            selectedLayout = @(id);
+            selectedAt = CFAbsoluteTimeGetCurrent();
+        }
         debugLog("select %s %s", id, success ? "ok" : "failed");
         return success;
     }
