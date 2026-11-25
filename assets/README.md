@@ -23,3 +23,5 @@ clang -fobjc-arc -framework AppKit scripts/generate-app-icon.m -o /tmp/insomemo-
 The generator reads the icon set's [Contents.json](../macos/Insomemo/Assets.xcassets/AppIcon.appiconset/Contents.json) and renders each size from the vector geometry. Without the icon-set argument, it writes only the source PNG.
 
 The Ko-fi logo in [KoFi.imageset](../macos/Insomemo/Assets.xcassets/KoFi.imageset) belongs to Ko-fi Labs and is used, under their brand guidelines, to link to the project's Ko-fi page. It is not covered by the project's MIT license.
+
+The GitHub mark in [GitHub.imageset](../macos/Insomemo/Assets.xcassets/GitHub.imageset) is `mark-github-24.svg` from [Primer Octicons](https://github.com/primer/octicons) 19.42.0, Copyright (c) GitHub Inc., released under the MIT license. The mark itself is a GitHub trademark, used under [GitHub's logo guidelines](https://github.com/logos) to link to the project on GitHub.

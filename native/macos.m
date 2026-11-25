@@ -333,49 +333,6 @@ static NSGridView *form(NSArray *rows) {
     grid.rowAlignment = NSGridRowAlignmentFirstBaseline;
     return grid;
 }
-/* A cup with a heart, in the outline style of the other tab symbols. */
-static NSImage *donateIcon(void) {
-    NSImage *icon = [NSImage
-         imageWithSize:NSMakeSize(22, 20)
-               flipped:NO
-        drawingHandler:^BOOL(NSRect rect) {
-            (void)rect;
-            [NSColor.blackColor set];
-            NSBezierPath *handle = [NSBezierPath
-                bezierPathWithRoundedRect:NSMakeRect(13.5, 7, 6.5, 7.5)
-                                  xRadius:3.25
-                                  yRadius:3.25];
-            handle.lineWidth = 1.5;
-            [handle stroke];
-            NSRect cup = NSMakeRect(2.5, 3.5, 13.5, 12.5);
-            NSBezierPath *body = [NSBezierPath bezierPathWithRoundedRect:cup
-                                                                 xRadius:4
-                                                                 yRadius:4];
-            // Clear the handle's inner half so it joins the cup's outline.
-            NSGraphicsContext.currentContext.compositingOperation = NSCompositingOperationClear;
-            [body fill];
-            NSGraphicsContext.currentContext.compositingOperation =
-                NSCompositingOperationSourceOver;
-            body.lineWidth = 1.5;
-            [body stroke];
-            // Two lobes and a point, filled separately so their overlap stays solid.
-            CGFloat x = NSMidX(cup), y = NSMidY(cup) + 0.4, r = 2;
-            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x - 1.6 - r, y + 0.6 - r, 2 * r,
-                                                              2 * r)] fill];
-            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x + 1.6 - r, y + 0.6 - r, 2 * r,
-                                                              2 * r)] fill];
-            NSBezierPath *point = [NSBezierPath bezierPath];
-            [point moveToPoint:NSMakePoint(x - 3.45, y - 0.1)];
-            [point lineToPoint:NSMakePoint(x + 3.45, y - 0.1)];
-            [point lineToPoint:NSMakePoint(x, y - 3.9)];
-            [point closePath];
-            [point fill];
-            return YES;
-        }];
-    icon.template = YES;
-    icon.accessibilityDescription = @"Donate";
-    return icon;
-}
 static NSImage *symbol(NSString *name, NSString *description) {
     return [NSImage imageWithSystemSymbolName:name accessibilityDescription:description];
 }
@@ -400,7 +357,7 @@ static NSTabViewItem *pane(NSString *title, NSImage *image, NSView *content) {
     return item;
 }
 
-/* The Settings window: General, Updates, and Donate tabs in a toolbar. */
+/* The Settings window: General, Updates, and Support tabs in a toolbar. */
 @interface Settings : NSObject <NSWindowDelegate>
 @property NSWindow *window;
 @property NSButton *loginBox;
@@ -502,15 +459,14 @@ static BOOL documentInputSources(void) {
     self.sparkleRows = @[ [grid rowAtIndex:1], [grid rowAtIndex:2] ];
     return grid;
 }
-- (NSView *)donate {
+- (NSView *)support {
     // Ko-fi's logo from the app's asset catalog; a build without one shows a cup.
     NSImage *logo = [NSImage imageNamed:@"KoFi"];
     NSImageView *cup;
     if (logo) {
         cup = [NSImageView imageViewWithImage:logo];
-        [cup.widthAnchor constraintEqualToConstant:50].active = YES;
-        [cup.heightAnchor constraintEqualToAnchor:cup.widthAnchor
-                                       multiplier:logo.size.height / logo.size.width]
+        [cup.widthAnchor constraintEqualToAnchor:cup.heightAnchor
+                                      multiplier:logo.size.width / logo.size.height]
             .active = YES;
     } else {
         NSImageSymbolConfiguration *large =
@@ -522,23 +478,45 @@ static BOOL documentInputSources(void) {
         cup.contentTintColor = NSColor.controlAccentColor;
     }
     cup.imageScaling = NSImageScaleProportionallyUpOrDown;
-    NSButton *support = pushButton(@"Support", self, @selector(openDonate:));
-    support.keyEquivalent = @"\r";
-    NSTextField *name = [NSTextField labelWithString:@"Ko-fi"];
-    name.font = [NSFont boldSystemFontOfSize:NSFont.systemFontSize];
-    NSStackView *kofi = [NSStackView stackViewWithViews:@[ cup, name, support ]];
-    kofi.orientation = NSUserInterfaceLayoutOrientationVertical;
-    kofi.spacing = 8;
+    // Both images get the same height, so the buttons below line up.
+    [cup.heightAnchor constraintEqualToConstant:40].active = YES;
+    // GitHub's mark from Primer Octicons (MIT), a template drawn in the text
+    // colour; a build without it shows a star.
+    NSImage *mark = [NSImage imageNamed:@"GitHub"]
+                        ?: [NSImage imageWithSystemSymbolName:@"star"
+                                     accessibilityDescription:nil];
+    mark.accessibilityDescription = @"GitHub";
+    NSImageView *github = [NSImageView imageViewWithImage:mark];
+    github.contentTintColor = NSColor.labelColor;
+    github.imageScaling = NSImageScaleProportionallyUpOrDown;
+    [github.heightAnchor constraintEqualToConstant:40].active = YES;
+    [github.widthAnchor constraintEqualToAnchor:github.heightAnchor].active = YES;
+    NSButton *starButton = pushButton(@"Star on GitHub", self, @selector(openProject:));
+    NSButton *coffeeButton = pushButton(@"Buy a Coffee", self, @selector(openDonate:));
+    [starButton.widthAnchor constraintEqualToConstant:150].active = YES;
+    [coffeeButton.widthAnchor constraintEqualToConstant:150].active = YES;
+    NSStackView *(^option)(NSArray<NSView *> *) = ^NSStackView *(NSArray<NSView *> *views) {
+        NSStackView *group = [NSStackView stackViewWithViews:views];
+        group.orientation = NSUserInterfaceLayoutOrientationVertical;
+        group.alignment = NSLayoutAttributeCenterX;
+        group.spacing = 10;
+        return group;
+    };
+    NSStackView *choices = [NSStackView
+        stackViewWithViews:@[ option(@[ github, starButton ]), option(@[ cup, coffeeButton ]) ]];
+    choices.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    choices.alignment = NSLayoutAttributeTop;
+    choices.distribution = NSStackViewDistributionFillEqually;
+    choices.spacing = 24;
     NSStackView *stack = column(@[
-        wrappingLabel(@"Insomemo is free and open source, and every feature is available to "
-                      @"everyone."),
-        wrappingLabel(@"Donations help keep it developed. If you would like to support the work, "
-                      @"you can buy a coffee on Ko-fi."),
-        kofi,
+        wrappingLabel(@"Insomemo is free and open source. Every feature is available to everyone."),
+        wrappingLabel(@"If you find it useful, star the project on GitHub or support its "
+                      @"development with a coffee on Ko-fi."),
+        choices,
     ]);
     stack.spacing = 16;
-    [stack setCustomSpacing:24 afterView:stack.arrangedSubviews[1]];
-    [kofi.centerXAnchor constraintEqualToAnchor:stack.centerXAnchor].active = YES;
+    [stack setCustomSpacing:26 afterView:stack.arrangedSubviews[1]];
+    [choices.widthAnchor constraintEqualToConstant:380].active = YES;
     return stack;
 }
 - (void)build {
@@ -547,7 +525,7 @@ static BOOL documentInputSources(void) {
     [tabs addTabViewItem:pane(@"General", symbol(@"gearshape", @"General"), [self general])];
     [tabs addTabViewItem:pane(@"Updates", symbol(@"arrow.triangle.2.circlepath", @"Updates"),
                               [self updates])];
-    [tabs addTabViewItem:pane(@"Donate", donateIcon(), [self donate])];
+    [tabs addTabViewItem:pane(@"Support", symbol(@"heart", @"Support"), [self support])];
     self.window = [NSWindow windowWithContentViewController:tabs];
     self.window.styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable;
     self.window.releasedWhenClosed = NO;
