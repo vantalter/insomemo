@@ -10,7 +10,7 @@
 #include <sys/time.h>
 
 /* Event log for diagnosing switching problems, off by default and turned on in
- * Settings → General. It writes ~/Library/Logs/Insomemo.log. Titles and sites
+ * Settings → General. It writes ~/Library/Logs/Insomemo/insomemo.log. Titles and sites
  * appear only as short hashes, so the log can be shared. */
 static NSString *const DebugLogKey = @"DebugLog";
 /* Past this size the log starts over, keeping the previous one beside it. */
@@ -20,7 +20,25 @@ static FILE *debugFile;
 static NSString *loggedContext;
 static void updateDebugLog(void);
 static NSString *debugLogPath(void) {
-    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
+    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo/insomemo.log"];
+}
+static NSString *debugLogBackupPath(void) {
+    return [debugLogPath() stringByAppendingString:@".1"];
+}
+static void migrateLog(NSString *source, NSString *destination) {
+    NSFileManager *files = NSFileManager.defaultManager;
+    if ([files fileExistsAtPath:source] && ![files fileExistsAtPath:destination])
+        [files moveItemAtPath:source toPath:destination error:NULL];
+}
+static void migrateDebugLogs(void) {
+    NSString *folder = [debugLogPath() stringByDeletingLastPathComponent];
+    NSString *oldFolderLog = [folder stringByAppendingPathComponent:@"Insomemo.log"];
+    NSString *oldFolderBackup = [oldFolderLog stringByAppendingString:@".old"];
+    NSString *legacyLog = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
+    migrateLog(oldFolderLog, debugLogPath());
+    migrateLog(legacyLog, debugLogPath());
+    migrateLog(oldFolderBackup, debugLogBackupPath());
+    migrateLog([legacyLog stringByAppendingString:@".old"], debugLogBackupPath());
 }
 static void debugLog(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static void debugLog(const char *format, ...) {
@@ -61,11 +79,11 @@ static void updateDebugLog(void) {
                             withIntermediateDirectories:YES
                                              attributes:nil
                                                   error:NULL];
+    migrateDebugLogs();
     NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:path
                                                                               error:NULL];
     if ((long long)attributes.fileSize > DebugLogLimit)
-        rename(path.fileSystemRepresentation,
-               [path stringByAppendingString:@".old"].fileSystemRepresentation);
+        rename(path.fileSystemRepresentation, debugLogBackupPath().fileSystemRepresentation);
     debugFile = fopen(path.fileSystemRepresentation, "a");
     // A new file starts with the current context, even if it has not changed.
     loggedContext = nil;
@@ -81,7 +99,7 @@ static void clearDebugLog(void) {
     }
     NSString *path = debugLogPath();
     [NSFileManager.defaultManager removeItemAtPath:path error:NULL];
-    [NSFileManager.defaultManager removeItemAtPath:[path stringByAppendingString:@".old"]
+    [NSFileManager.defaultManager removeItemAtPath:debugLogBackupPath()
                                              error:NULL];
     updateDebugLog();
 }
@@ -408,7 +426,7 @@ static BOOL documentInputSources(void) {
                                          target:self
                                          action:@selector(toggleDebugLog:)];
     NSTextField *debugNote = noteLabel();
-    debugNote.stringValue = @"Writes ~/Library/Logs/Insomemo.log for bug reports. Window titles "
+    debugNote.stringValue = @"Writes ~/Library/Logs/Insomemo/insomemo.log for bug reports. Window titles "
                             @"and sites appear only as short codes, never as text.";
     self.showLog = pushButton(@"Show Log", self, @selector(showDebugLog:));
     self.clearLog = pushButton(@"Clear Log", self, @selector(clearDebugLog:));
@@ -592,7 +610,7 @@ static BOOL documentInputSources(void) {
     self.showLog.enabled = logged;
     self.clearLog.enabled =
         logged || [NSFileManager.defaultManager
-                      fileExistsAtPath:[debugLogPath() stringByAppendingString:@".old"]];
+                      fileExistsAtPath:debugLogBackupPath()];
     id updater = [self updater];
     for (NSGridRow *row in self.sparkleRows)
         row.hidden = !updater;
@@ -635,8 +653,9 @@ static BOOL documentInputSources(void) {
     [self refresh:nil];
 }
 - (void)showDebugLog:(id)sender {
+    NSString *directory = [debugLogPath() stringByDeletingLastPathComponent];
     [NSWorkspace.sharedWorkspace
-        activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:debugLogPath()] ]];
+        activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:directory isDirectory:YES] ]];
 }
 - (void)clearDebugLog:(id)sender {
     clearDebugLog();
