@@ -4,7 +4,10 @@ labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Window titles can contain private information. Check logs and screenshots before attaching them.
+      value: >-
+        Issues are public. Window titles can contain private information, so check screenshots
+        and terminal output before attaching them. Report a Problem… in Insomemo fills in the
+        version, platform, and system for you.
   - type: textarea
     id: what
     attributes:
@@ -16,8 +19,8 @@ body:
     id: version
     attributes:
       label: Insomemo version
-      description: Output of `insomemo --version`, or the release you installed.
-      placeholder: insomemo 0.2.10
+      description: Shown in Settings → Updates on macOS, or by `insomemo --version`.
+      placeholder: insomemo 0.3.3
     validations:
       required: true
   - type: dropdown
@@ -36,8 +39,8 @@ body:
     id: system
     attributes:
       label: System details
-      description: OS version, desktop environment, and on Linux the tray host (for example KDE, Waybar, Cinnamon, Enlightenment).
-      placeholder: Ubuntu 24.04, KDE Plasma 6
+      description: OS version and processor; on Linux, the desktop environment and tray host (for example KDE, Waybar, Cinnamon, Enlightenment).
+      placeholder: macOS 15.5, aarch64
   - type: input
     id: app
     attributes:
@@ -47,6 +50,9 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Terminal output
-      description: Run `insomemo` from a terminal and paste anything it prints.
-      render: text
+      label: Log
+      description: >-
+        On macOS, attach the debug log: turn on Record switching events in Settings → General,
+        reproduce the problem, then choose Show Log and drag the file here. It shows titles and
+        sites only as short codes. On Linux, run `insomemo` from a terminal and paste anything it
+        prints.

@@ -145,6 +145,14 @@ impl Backend {
         Ok(None)
     }
 
+    /// The bug report form's name for this compositor.
+    pub fn platform(&self) -> &'static str {
+        match self.protocol {
+            Protocol::Sway => "Linux Sway",
+            Protocol::Hyprland => "Linux Hyprland",
+        }
+    }
+
     pub fn fd(&self) -> i32 {
         self.stream.as_raw_fd()
     }

@@ -470,6 +470,9 @@ static GVariant *properties(int id) {
                     ? json_object_get_string_member(tray_menu, "update_label") : "";
         enabled = tray_menu && json_object_get_boolean_member(tray_menu, "update_available");
         break;
+    case 17:
+        label = "Report a Problem…";
+        break;
     case 11: {
         const char *login = tray_menu ? json_object_get_string_member(tray_menu, "login") : NULL;
         label = "Launch at Login";
@@ -522,7 +525,7 @@ static GVariant *menu_node(int id, int depth) {
     if (depth != 0) {
         int next = depth > 0 ? depth - 1 : -1;
         if (id == 0) {
-            int ids[] = {1, 6, 10, 2, 7, 8, 3, 4, 9, 15, 11, 12, 13, 14, 16, 5};
+            int ids[] = {1, 6, 10, 2, 7, 8, 3, 4, 9, 15, 11, 12, 13, 14, 17, 16, 5};
             for (size_t i = 0; i < G_N_ELEMENTS(ids); i++)
                 g_variant_builder_add(&children, "v", menu_node(ids[i], next));
         }
@@ -556,6 +559,8 @@ static void clicked(int id, const char *event) {
         emit("auto-updates", "", "");
     if (id == 14)
         emit("open-updates", "", "");
+    if (id == 17)
+        emit("report", "", "");
     if ((id >= 200 && id < 300 && menu_scope(id - 200)) ||
         (id >= 300 && id < 400 && menu_scope(id - 300))) {
         JsonObject *scope = menu_scope(id % 100);
