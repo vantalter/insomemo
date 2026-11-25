@@ -250,7 +250,7 @@ rm -rf "$(getconf DARWIN_USER_CACHE_DIR)com.apple.iconservices"
 
 **macOS: switching misbehaves now and then, and you want to report it.** In **Settings → General**, turn on **Record switching events** under **Debug Log**, then use Insomemo until the problem happens again. Logging starts at once, without a restart.
 
-The log, `~/Library/Logs/Insomemo.log`, lists each focused app and window, layout change, and layout Insomemo selected, with timestamps. Window titles and web sites appear only as short hashes, so the log is safe to attach to an issue. **Show Log** reveals it in Finder, and **Clear Log** deletes it. It starts over past 1 MB, keeping the previous log as `Insomemo.log.old`. Turn the setting off when you are done.
+The log, `~/Library/Logs/Insomemo/insomemo.log`, lists each focused app and window, layout change, and layout Insomemo selected, with timestamps. Window titles and web sites appear only as short codes, made with a secret that stays on your Mac, so someone reading the log cannot check it for a site or title they guess; **Clear Log** also starts new codes. App identifiers, such as `com.apple.Safari`, and times do appear, and each time includes your UTC offset. The log is readable only by your user account. **Show Log** reveals it in Finder, and **Clear Log** deletes it, the previous log, and their folder. It starts over past 1 MB, keeping the previous log as `insomemo.log.1`. A log from version 0.3.3 or earlier, `~/Library/Logs/Insomemo.log`, moves into this folder when Insomemo starts. Turn the setting off when you are done.
 
 ## Native references
 

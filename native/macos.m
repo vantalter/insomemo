@@ -5,22 +5,56 @@
 #import <Carbon/Carbon.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <ServiceManagement/ServiceManagement.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 
 /* Event log for diagnosing switching problems, off by default and turned on in
- * Settings → General. It writes ~/Library/Logs/Insomemo.log. Titles and sites
- * appear only as short hashes, so the log can be shared. */
+ * Settings → General. It writes ~/Library/Logs/Insomemo/insomemo.log. Titles and
+ * sites appear only as short hashes, so the log can be shared. */
 static NSString *const DebugLogKey = @"DebugLog";
 /* Past this size the log starts over, keeping the previous one beside it. */
 static const long DebugLogLimit = 1024 * 1024;
+/* A random secret mixed into the log's hashes, kept until Clear Log. Without
+ * it, anyone holding the log could hash a guessed site or title and look for
+ * it; with it, the codes only show which events share a window or site. */
+static NSString *const DebugSaltKey = @"DebugLogSalt";
 static FILE *debugFile;
 /* What the last context line recorded, so repeats of it are skipped. */
 static NSString *loggedContext;
 static void updateDebugLog(void);
 static NSString *debugLogPath(void) {
-    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
+    return [NSHomeDirectory()
+        stringByAppendingPathComponent:@"Library/Logs/Insomemo/insomemo.log"];
+}
+static NSString *debugLogBackupPath(void) {
+    return [debugLogPath() stringByAppendingString:@".1"];
+}
+/* Versions up to 0.3.3 wrote ~/Library/Logs/Insomemo.log and Insomemo.log.old.
+ * They move into the folder at launch, whether or not logging is on, so Clear
+ * Log can always remove them; where a newer log is already there, the older
+ * one is deleted. */
+static void moveOldDebugLogs(void) {
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *old = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
+    NSArray *moves = @[
+        @[ old, debugLogPath() ],
+        @[ [old stringByAppendingString:@".old"], debugLogBackupPath() ],
+    ];
+    for (NSArray *move in moves) {
+        if (![files fileExistsAtPath:move[0]])
+            continue;
+        [files createDirectoryAtPath:[move[1] stringByDeletingLastPathComponent]
+            withIntermediateDirectories:YES
+                             attributes:nil
+                                  error:NULL];
+        if ([files fileExistsAtPath:move[1]])
+            [files removeItemAtPath:move[0] error:NULL];
+        else if ([files moveItemAtPath:move[0] toPath:move[1] error:NULL])
+            chmod([move[1] fileSystemRepresentation], 0600);
+    }
 }
 static void debugLog(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static void debugLog(const char *format, ...) {
@@ -31,8 +65,12 @@ static void debugLog(const char *format, ...) {
     struct tm local;
     localtime_r(&now.tv_sec, &local);
     char stamp[32];
-    strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", &local);
-    fprintf(debugFile, "%s.%03d ", stamp, (int)(now.tv_usec / 1000));
+    strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%S", &local);
+    // ISO 8601 with the UTC offset, so logs from any time zone, or across a
+    // daylight saving change, read unambiguously.
+    long offset = labs(local.tm_gmtoff) / 60;
+    fprintf(debugFile, "%s.%03d%c%02ld:%02ld ", stamp, (int)(now.tv_usec / 1000),
+            local.tm_gmtoff < 0 ? '-' : '+', offset / 60, offset % 60);
     va_list arguments;
     va_start(arguments, format);
     vfprintf(debugFile, format, arguments);
@@ -48,6 +86,7 @@ static void debugLog(const char *format, ...) {
 }
 /* Opens or closes the log to match the setting. */
 static void updateDebugLog(void) {
+    moveOldDebugLogs();
     BOOL enabled = [NSUserDefaults.standardUserDefaults boolForKey:DebugLogKey];
     if (!enabled && debugFile) {
         debugLog("log off");
@@ -64,9 +103,17 @@ static void updateDebugLog(void) {
     NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:path
                                                                               error:NULL];
     if ((long long)attributes.fileSize > DebugLogLimit)
-        rename(path.fileSystemRepresentation,
-               [path stringByAppendingString:@".old"].fileSystemRepresentation);
-    debugFile = fopen(path.fileSystemRepresentation, "a");
+        rename(path.fileSystemRepresentation, debugLogBackupPath().fileSystemRepresentation);
+    // Readable only by the user, also when an older version created it.
+    int fd = open(path.fileSystemRepresentation, O_WRONLY | O_CREAT | O_APPEND, 0600);
+    if (fd >= 0) {
+        fchmod(fd, 0600);
+        debugFile = fdopen(fd, "a");
+        if (!debugFile)
+            close(fd);
+    }
+    if (!debugFile)
+        return;
     // A new file starts with the current context, even if it has not changed.
     loggedContext = nil;
     NSString *version = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"];
@@ -81,16 +128,38 @@ static void clearDebugLog(void) {
     }
     NSString *path = debugLogPath();
     [NSFileManager.defaultManager removeItemAtPath:path error:NULL];
-    [NSFileManager.defaultManager removeItemAtPath:[path stringByAppendingString:@".old"]
+    [NSFileManager.defaultManager removeItemAtPath:debugLogBackupPath()
                                              error:NULL];
+    // The folder goes too. Finder's view settings, left once Show Log opened
+    // it, are removed first; rmdir removes only an empty folder, so anything
+    // else in it keeps it. A log that is on starts the folder again.
+    NSString *folder = path.stringByDeletingLastPathComponent;
+    [NSFileManager.defaultManager
+        removeItemAtPath:[folder stringByAppendingPathComponent:@".DS_Store"]
+                   error:NULL];
+    rmdir(folder.fileSystemRepresentation);
+    // A new log gets new codes, unrelated to those in logs already shared.
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:DebugSaltKey];
     updateDebugLog();
 }
-/* A short, stable stand-in for a title or site; "-" when there is none. */
+/* A short stand-in for a title or site, the same throughout one log; "-" when
+ * there is none. */
 static const char *debugHash(NSString *text) {
     if (!text.length)
         return "-";
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSString *salt = [defaults stringForKey:DebugSaltKey];
+    if (!salt.length) {
+        unsigned char bytes[16];
+        arc4random_buf(bytes, sizeof bytes);
+        NSMutableString *hex = [NSMutableString string];
+        for (size_t i = 0; i < sizeof bytes; i++)
+            [hex appendFormat:@"%02x", bytes[i]];
+        salt = hex;
+        [defaults setObject:salt forKey:DebugSaltKey];
+    }
     char hash[17];
-    native_hash(text.UTF8String, hash);
+    native_hash([NSString stringWithFormat:@"%@\n%@", salt, text].UTF8String, hash);
     hash[8] = 0;
     // Each call gets its own string, so one log line can hold several hashes.
     return @(hash).UTF8String;
@@ -408,8 +477,9 @@ static BOOL documentInputSources(void) {
                                          target:self
                                          action:@selector(toggleDebugLog:)];
     NSTextField *debugNote = noteLabel();
-    debugNote.stringValue = @"Writes ~/Library/Logs/Insomemo.log for bug reports. Window titles "
-                            @"and sites appear only as short codes, never as text.";
+    debugNote.stringValue = @"Writes ~/Library/Logs/Insomemo/insomemo.log for bug reports. "
+                            @"Window titles and sites appear only as codes that only this Mac "
+                            @"can match, never as text.";
     self.showLog = pushButton(@"Show Log", self, @selector(showDebugLog:));
     self.clearLog = pushButton(@"Clear Log", self, @selector(clearDebugLog:));
     NSStackView *logButtons = [NSStackView stackViewWithViews:@[ self.showLog, self.clearLog ]];
@@ -602,7 +672,7 @@ static BOOL documentInputSources(void) {
     self.showLog.enabled = logged;
     self.clearLog.enabled =
         logged || [NSFileManager.defaultManager
-                      fileExistsAtPath:[debugLogPath() stringByAppendingString:@".old"]];
+                      fileExistsAtPath:debugLogBackupPath()];
     id updater = [self updater];
     for (NSGridRow *row in self.sparkleRows)
         row.hidden = !updater;
@@ -645,6 +715,7 @@ static BOOL documentInputSources(void) {
     [self refresh:nil];
 }
 - (void)showDebugLog:(id)sender {
+    // The log selected in its folder, ready to attach to a bug report.
     [NSWorkspace.sharedWorkspace
         activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:debugLogPath()] ]];
 }
