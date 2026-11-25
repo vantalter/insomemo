@@ -240,4 +240,6 @@ Manual desktop acceptance checks:
 
 Bug reports and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md), which also describes how releases are made. Please report security issues privately as described in [SECURITY.md](SECURITY.md).
 
-MIT licensed. See [LICENSE](LICENSE).
+## License
+
+Insomemo is released under the [MIT License](LICENSE). The macOS app also includes [Sparkle](https://sparkle-project.org) and GitHub's mark from [Primer Octicons](https://github.com/primer/octicons), each under its own MIT License. The Ko-fi logo on the Support tab belongs to Ko-fi Labs and is used under their brand guidelines; it is not covered by these licenses (see [assets](assets/README.md)).
