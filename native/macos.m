@@ -10,8 +10,8 @@
 #include <sys/time.h>
 
 /* Event log for diagnosing switching problems, off by default and turned on in
- * Settings → General. It writes ~/Library/Logs/Insomemo/insomemo.log. Titles and sites
- * appear only as short hashes, so the log can be shared. */
+ * Settings → General. It writes ~/Library/Logs/Insomemo/insomemo.log. Titles and
+ * sites appear only as short hashes, so the log can be shared. */
 static NSString *const DebugLogKey = @"DebugLog";
 /* Past this size the log starts over, keeping the previous one beside it. */
 static const long DebugLogLimit = 1024 * 1024;
@@ -20,25 +20,35 @@ static FILE *debugFile;
 static NSString *loggedContext;
 static void updateDebugLog(void);
 static NSString *debugLogPath(void) {
-    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo/insomemo.log"];
+    return [NSHomeDirectory()
+        stringByAppendingPathComponent:@"Library/Logs/Insomemo/insomemo.log"];
 }
 static NSString *debugLogBackupPath(void) {
     return [debugLogPath() stringByAppendingString:@".1"];
 }
-static void migrateLog(NSString *source, NSString *destination) {
+/* Versions up to 0.3.3 wrote ~/Library/Logs/Insomemo.log and Insomemo.log.old.
+ * They move into the folder at launch, whether or not logging is on, so Clear
+ * Log can always remove them; where a newer log is already there, the older
+ * one is deleted. */
+static void moveOldDebugLogs(void) {
     NSFileManager *files = NSFileManager.defaultManager;
-    if ([files fileExistsAtPath:source] && ![files fileExistsAtPath:destination])
-        [files moveItemAtPath:source toPath:destination error:NULL];
-}
-static void migrateDebugLogs(void) {
-    NSString *folder = [debugLogPath() stringByDeletingLastPathComponent];
-    NSString *oldFolderLog = [folder stringByAppendingPathComponent:@"Insomemo.log"];
-    NSString *oldFolderBackup = [oldFolderLog stringByAppendingString:@".old"];
-    NSString *legacyLog = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
-    migrateLog(oldFolderLog, debugLogPath());
-    migrateLog(legacyLog, debugLogPath());
-    migrateLog(oldFolderBackup, debugLogBackupPath());
-    migrateLog([legacyLog stringByAppendingString:@".old"], debugLogBackupPath());
+    NSString *old = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Insomemo.log"];
+    NSArray *moves = @[
+        @[ old, debugLogPath() ],
+        @[ [old stringByAppendingString:@".old"], debugLogBackupPath() ],
+    ];
+    for (NSArray *move in moves) {
+        if (![files fileExistsAtPath:move[0]])
+            continue;
+        [files createDirectoryAtPath:[move[1] stringByDeletingLastPathComponent]
+            withIntermediateDirectories:YES
+                             attributes:nil
+                                  error:NULL];
+        if ([files fileExistsAtPath:move[1]])
+            [files removeItemAtPath:move[0] error:NULL];
+        else
+            [files moveItemAtPath:move[0] toPath:move[1] error:NULL];
+    }
 }
 static void debugLog(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static void debugLog(const char *format, ...) {
@@ -66,6 +76,7 @@ static void debugLog(const char *format, ...) {
 }
 /* Opens or closes the log to match the setting. */
 static void updateDebugLog(void) {
+    moveOldDebugLogs();
     BOOL enabled = [NSUserDefaults.standardUserDefaults boolForKey:DebugLogKey];
     if (!enabled && debugFile) {
         debugLog("log off");
@@ -79,7 +90,6 @@ static void updateDebugLog(void) {
                             withIntermediateDirectories:YES
                                              attributes:nil
                                                   error:NULL];
-    migrateDebugLogs();
     NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:path
                                                                               error:NULL];
     if ((long long)attributes.fileSize > DebugLogLimit)
@@ -426,8 +436,8 @@ static BOOL documentInputSources(void) {
                                          target:self
                                          action:@selector(toggleDebugLog:)];
     NSTextField *debugNote = noteLabel();
-    debugNote.stringValue = @"Writes ~/Library/Logs/Insomemo/insomemo.log for bug reports. Window titles "
-                            @"and sites appear only as short codes, never as text.";
+    debugNote.stringValue = @"Writes ~/Library/Logs/Insomemo/insomemo.log for bug reports. "
+                            @"Window titles and sites appear only as short codes, never as text.";
     self.showLog = pushButton(@"Show Log", self, @selector(showDebugLog:));
     self.clearLog = pushButton(@"Clear Log", self, @selector(clearDebugLog:));
     NSStackView *logButtons = [NSStackView stackViewWithViews:@[ self.showLog, self.clearLog ]];
@@ -653,9 +663,9 @@ static BOOL documentInputSources(void) {
     [self refresh:nil];
 }
 - (void)showDebugLog:(id)sender {
-    NSString *directory = [debugLogPath() stringByDeletingLastPathComponent];
+    // The log selected in its folder, ready to attach to a bug report.
     [NSWorkspace.sharedWorkspace
-        activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:directory isDirectory:YES] ]];
+        activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:debugLogPath()] ]];
 }
 - (void)clearDebugLog:(id)sender {
     clearDebugLog();
