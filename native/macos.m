@@ -130,6 +130,14 @@ static void clearDebugLog(void) {
     [NSFileManager.defaultManager removeItemAtPath:path error:NULL];
     [NSFileManager.defaultManager removeItemAtPath:debugLogBackupPath()
                                              error:NULL];
+    // The folder goes too. Finder's view settings, left once Show Log opened
+    // it, are removed first; rmdir removes only an empty folder, so anything
+    // else in it keeps it. A log that is on starts the folder again.
+    NSString *folder = path.stringByDeletingLastPathComponent;
+    [NSFileManager.defaultManager
+        removeItemAtPath:[folder stringByAppendingPathComponent:@".DS_Store"]
+                   error:NULL];
+    rmdir(folder.fileSystemRepresentation);
     // A new log gets new codes, unrelated to those in logs already shared.
     [NSUserDefaults.standardUserDefaults removeObjectForKey:DebugSaltKey];
     updateDebugLog();
