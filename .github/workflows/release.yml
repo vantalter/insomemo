@@ -55,7 +55,7 @@ jobs:
           fi
           if [ -n "$missing" ]; then
             # Partial configuration is a mistake, not a request for an unsigned build.
-            echo "::error::Release signing secrets missing:$missing; see README > Releasing" >&2
+            echo "::error::Release signing secrets missing:$missing; see CONTRIBUTING.md > Releasing" >&2
             exit 1
           fi
           # A throwaway keychain holds the certificate for this job only.

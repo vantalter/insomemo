@@ -19,7 +19,7 @@ app:
 dmg: app
 	scripts/make-dmg.sh dist/Insomemo.dmg
 
-# Requires CODESIGN_IDENTITY and NOTARY_PROFILE; see README > Releasing.
+# Requires CODESIGN_IDENTITY and NOTARY_PROFILE; see CONTRIBUTING.md > Releasing.
 notarize:
 	scripts/package-macos.sh dist/Insomemo
 
