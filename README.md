@@ -78,7 +78,7 @@ The app is an Xcode project, [macos/Insomemo.xcodeproj](macos/Insomemo.xcodeproj
 
 The app lives in the menu bar, without a Dock icon. Its monochrome stacked-keyboard symbol automatically renders white or dark to match the macOS menu bar. The tray is icon-only; the OS input menu shows the current language. Pausing dims the macOS icon while keeping its menu available. The purple macOS app icon uses the same keyboard mark with a static switch dot; source artwork and preparation notes are in [assets](assets/README.md).
 
-**Settings…** (⌘,) in the menu opens a small window with three tabs: **General** (Launch at Login, Window / Tab Tracking, whether macOS's own document input switching is on, the debug log, and links to the project and the configuration folder), **Updates** (with the version), and **Support** (with links to star the project on GitHub or donate through Ko-fi). Opening Insomemo again from Finder or Spotlight while it runs also opens Settings.
+**Settings…** (⌘,) in the menu opens a small window with three tabs: **General** (Launch at Login, Window / Tab Tracking, whether macOS's own document input switching is on, the debug log, and links to the project and the configuration folder), **Updates** (with the version), and **Support** (with links to star the project on GitHub or donate through Ko-fi, and **Report a Problem…**). Opening Insomemo again from Finder or Spotlight while it runs also opens Settings.
 
 To place Insomemo beside the macOS input-source icon, hold **Command** and drag the Insomemo icon there. The status item has a stable macOS autosave name so the system can retain its identity across launches. If the system input-source icon is hidden, Insomemo remains in its normal menu-bar position. macOS does not provide a supported API to position this app automatically relative to that system icon.
 
@@ -230,6 +230,8 @@ Choose **Launch at Login** in **Settings → General** on macOS or in the tray m
 - **Linux:** the app writes an XDG autostart entry, `~/.config/autostart/insomemo.desktop`, that starts the binary at its current path, so install it somewhere stable such as `~/.local/bin` first. GNOME, KDE, Xfce, and other desktops that follow the XDG autostart specification run it; Sway and Hyprland do not by default, so start it from their config (`exec insomemo` or `exec-once = insomemo`) or use the provided [systemd user service](packaging/insomemo.service) instead. Use one method only; a second copy exits because the first holds the state lock.
 
 ## Troubleshooting
+
+To report a problem, choose **Report a Problem…** in **Settings → Support** on macOS or in the tray menu on Linux. It opens a new GitHub issue with Insomemo's version, the platform, and your operating system and processor filled in; it never includes window titles, sites, or saved layouts. Nothing is sent until you submit the issue, so add what happened, and on macOS the debug log described below, first.
 
 **macOS: Window / Tab Tracking is off although Insomemo is switched on in System Settings.** macOS ties the Accessibility permission to the app's signature. Versions up to 0.2.10 were ad-hoc signed, so the first Developer ID release (0.3.0) is a new app to macOS, as is each ad-hoc local build; the existing switch belongs to the previous version and no longer applies. Remove the stale entry and grant the permission again:
 

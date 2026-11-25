@@ -4,6 +4,7 @@ mod login;
 mod native;
 #[cfg(any(target_os = "linux", test))]
 mod panel;
+mod report;
 mod storage;
 #[cfg(any(target_os = "linux", test))]
 mod tray_svg;
@@ -47,6 +48,19 @@ fn installed_layouts() -> Result<Vec<Layout>, String> {
         return result;
     }
     native::layouts()
+}
+
+/// This platform as the bug report form's Platform options name it.
+fn platform() -> &'static str {
+    #[cfg(target_os = "linux")]
+    if let Some(name) = WAYLAND.with(|w| w.borrow().as_ref().map(|b| b.platform())) {
+        return name;
+    }
+    if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Linux X11"
+    }
 }
 
 fn select_layout(layout: &str) -> bool {
@@ -269,6 +283,10 @@ fn event_with_context(kind: &str, first: &str, second: &str, window_id: &str, si
     }
     if kind == "open-updates" {
         unsafe { native::native_open_updates_page() };
+        return;
+    }
+    if kind == "report" {
+        report::open(&report::url(platform()));
         return;
     }
 

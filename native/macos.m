@@ -508,15 +508,25 @@ static BOOL documentInputSources(void) {
     choices.alignment = NSLayoutAttributeTop;
     choices.distribution = NSStackViewDistributionFillEqually;
     choices.spacing = 24;
+    // A problem goes to GitHub's bug report form, prefilled by the app.
+    NSBox *line = [[NSBox alloc] init];
+    line.boxType = NSBoxSeparator;
+    NSStackView *report = [NSStackView stackViewWithViews:@[
+        [NSTextField labelWithString:@"Something not working?"],
+        pushButton(@"Report a Problem…", self, @selector(reportProblem:)),
+    ]];
+    report.alignment = NSLayoutAttributeCenterY;
     NSStackView *stack = column(@[
         wrappingLabel(@"Insomemo is free and open source. Every feature is available to everyone."),
         wrappingLabel(@"If you find it useful, star the project on GitHub or support its "
                       @"development with a coffee on Ko-fi."),
-        choices,
+        choices, line, report,
     ]);
     stack.spacing = 16;
     [stack setCustomSpacing:26 afterView:stack.arrangedSubviews[1]];
+    [stack setCustomSpacing:24 afterView:choices];
     [choices.widthAnchor constraintEqualToConstant:380].active = YES;
+    [line.widthAnchor constraintEqualToConstant:400].active = YES;
     return stack;
 }
 - (void)build {
@@ -648,6 +658,9 @@ static BOOL documentInputSources(void) {
     [NSWorkspace.sharedWorkspace
         openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.keyboard?"
                                      @"InputSources"]];
+}
+- (void)reportProblem:(id)sender {
+    emit(@"report", @"", @"");
 }
 - (void)openDonate:(id)sender {
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:DonateURL]];
