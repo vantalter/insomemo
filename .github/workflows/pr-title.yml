@@ -1,0 +1,21 @@
+name: pr-title
+# Pull requests are squash-merged under their title, which release-please reads
+# to choose the next version and write the changelog, so the title must follow
+# Conventional Commits: "fix: …", "feat: …", "feat!: …" for a breaking change.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+permissions: {}
+jobs:
+  title:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Conventional Commits title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          types='feat|fix|perf|revert|deps|docs|chore|ci|test|build|style|refactor'
+          if ! printf '%s' "$TITLE" | grep -Eq "^($types)(\([a-z0-9-]+\))?!?: [^ ]"; then
+            echo "::error::Start the title with a type, such as \"fix: …\" or \"feat: …\" (types: ${types//|/, })" >&2
+            exit 1
+          fi

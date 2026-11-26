@@ -33,17 +33,24 @@ Native code follows [.clang-format](.clang-format), with a 100-column limit.
 ## Pull requests
 
 - Keep each pull request to one change, and describe what it fixes and how you tested it.
+- Title it in the [Conventional Commits](https://www.conventionalcommits.org) form, which CI checks: `fix: …` for a bug fix, `feat: …` for a new feature, and `docs:`, `ci:`, `test:`, `refactor:`, `build:`, or `chore:` for changes users do not notice. Add `!` after the type, as in `feat!: …`, for a change that breaks existing setups. Pull requests are squash-merged under their title, which decides the next version and becomes a line in the changelog and in the app's update window, so after the type, say what changed for users.
 - Explain behaviour changes in the README when they affect users.
 - CI must pass on macOS and Linux.
-- Do not bump the version in `Cargo.toml`; releases are cut separately.
+- Do not bump the version in `Cargo.toml` or edit `CHANGELOG.md`; release-please does both.
 
 ## Releasing
 
-Set `version` in `Cargo.toml`, merge to `main`, then push a matching tag, for example `git tag v0.1.0 && git push origin v0.1.0`. The release workflow checks that the tag matches, tests and builds every platform, and publishes a GitHub release with checksums. Only versions with a suffix, such as `1.2.0-beta`, are published as pre-releases, because the macOS app reads its update feed from the latest release, which GitHub never sets to a pre-release.
+Releases are prepared by [release-please](https://github.com/googleapis/release-please). After each merge to `main`, it keeps a release pull request open, titled like `chore: release 0.4.0`, that sets the next version in `Cargo.toml` and `Cargo.lock` and adds the changes to `CHANGELOG.md`. While Insomemo is below 1.0, `feat:` raises the minor version (0.3.5 to 0.4.0), `fix:` and `perf:` the patch version (0.3.5 to 0.3.6), and a breaking change also the minor version. Titles of other types are left out of the changelog and start no release.
+
+To release, merge the release pull request. release-please then tags the merge and creates a draft release with the changelog, and the release workflow tests and builds every platform, attaches the files and their checksums, puts the install notes above the changelog, and publishes the release. Until then the release stays a draft, so the app's update feed never points at a release without its files. If the build fails, fix the cause and re-run the failed jobs from the Actions tab; the draft waits.
+
+The pull request is opened with the workflow's own token, so CI does not run on it; it changes only the version and the changelog. Two repository settings are needed: **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**, and, under **Settings → General → Pull Requests**, squash merging with **Default to pull request title**, so a single-commit pull request is still merged under its title.
+
+Pushing a tag by hand still runs the release workflow, for a tag that matches the version in `Cargo.toml`, as in `git tag v0.4.0 && git push origin v0.4.0`. Release-please does not make pre-releases: for a release candidate, set a version such as `0.4.0-rc.1` in `Cargo.toml` by hand, merge it, and push its tag; the release pull request sets the final version again. Only versions with a suffix are published as pre-releases, because the macOS app reads its update feed from the latest release, which GitHub never sets to a pre-release.
 
 A pre-release updates to its final release: the app's bundle version, which Sparkle compares, drops the suffix's separators, so `0.4.0-rc.1` becomes `0.4.0rc1`, which comes before `0.4.0` ([scripts/bundle-version.sh](scripts/bundle-version.sh)). Pre-releases are not offered as updates to anyone, so testers install them from the releases page.
 
-Sparkle's update window lists the titles of the commits since the previous release, or since the previous final release for a final one. Titles starting with "Release" are left out, and a merged pull request shows its own title. Users read these titles, so give pull requests titles that say what changed for them.
+Sparkle's update window lists the titles of the commits since the previous release, or since the previous final release for a final one, without their `fix:` or `feat:` prefix. Release pull requests and titles of other types, such as `docs:` or `ci:`, are left out.
 
 The macOS app updates itself from `appcast.xml`, a feed the workflow adds to each release. Sparkle installs only updates signed with the project's private EdDSA key. Create the key once with Sparkle's `generate_keys` tool, which Xcode downloads with the package (Xcode → Settings → Locations shows the DerivedData folder):
 

@@ -1,9 +1,20 @@
 name: release
+# Builds and publishes a release. release-please.yml runs it after merging a
+# release pull request, with the draft release it created; pushing a tag by
+# hand also runs it, for example to retry, and creates the release.
 on:
   push:
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: The tag to release, already pushed
+        required: true
+        type: string
 permissions:
   contents: read
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 jobs:
   version:
     runs-on: ubuntu-24.04
@@ -11,12 +22,14 @@ jobs:
       version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - id: check
         name: Tag matches Cargo.toml
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
+          if [ "v$version" != "$TAG" ]; then
+            echo "Tag $TAG does not match Cargo.toml version $version" >&2
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -29,6 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.TAG }}
           # The update feed lists the commits since the previous release tag.
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
@@ -121,6 +135,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Linux native dependencies
         run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libjson-glib-dev libx11-dev libxkbcommon-dev libgdk-pixbuf-2.0-dev pkg-config xvfb x11-xkb-utils dbus-x11 python3-gi gir1.2-gdkpixbuf-2.0 curl
@@ -167,6 +183,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.TAG }}
           # The generated notes start at the previous release tag.
           fetch-depth: 0
       - uses: actions/download-artifact@v4
@@ -176,7 +193,7 @@ jobs:
           # everything in this directory is uploaded to the release.
           path: release-files
           merge-multiple: true
-      - name: Create GitHub release
+      - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
@@ -191,8 +208,19 @@ jobs:
           if [ "${{ needs.macos.outputs.signed }}" = "true" ]; then drop=unsigned; else drop=signed; fi
           sed -e "/<!-- $drop -->/,/<!-- \/$drop -->/d" -e '/^<!-- \/*\(un\)*signed -->$/d' \
             ../.github/release-notes.md > ../release-notes.md
-          # A final release lists everything since the previous final release,
-          # not just the changes since its last release candidate.
-          previous=$(../scripts/previous-tag.sh "$VERSION")
-          gh release create "$GITHUB_REF_NAME" * $prerelease --generate-notes \
-            ${previous:+--notes-start-tag "$previous"} --title "Insomemo $VERSION" --notes-file ../release-notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # release-please's draft: the install notes go above its changelog,
+            # and publishing it makes it the latest release once its files are there.
+            gh release upload "$TAG" * --clobber
+            { cat ../release-notes.md; echo; gh release view "$TAG" --json body -q .body; } > ../notes.md
+            gh release edit "$TAG" --title "Insomemo $VERSION" --notes-file ../notes.md \
+              --draft=false $prerelease
+          else
+            # A tag pushed by hand. A final release lists everything since the
+            # previous final release, not just the changes since its last
+            # release candidate.
+            previous=$(../scripts/previous-tag.sh "$VERSION")
+            gh release create "$TAG" * $prerelease --generate-notes \
+              ${previous:+--notes-start-tag "$previous"} --title "Insomemo $VERSION" \
+              --notes-file ../release-notes.md
+          fi
