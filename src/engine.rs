@@ -589,6 +589,19 @@ mod tests {
     }
 
     #[test]
+    fn changes_while_a_system_prompt_is_in_front_are_not_learned() {
+        let mut e = engine();
+        e.focus("terminal", "one");
+        assert!(e.layout_changed("ua"));
+        // A password prompt: no context while macOS forces a Latin layout.
+        e.focus("", "");
+        assert!(!e.layout_changed("en"));
+        assert!(!e.layout_changed("ua"));
+        assert_eq!(e.focus("terminal", "one"), None);
+        assert!(e.state.entries.values().all(|entry| entry.layout == "ua"));
+    }
+
+    #[test]
     fn lru_evicts_least_recently_used_including_defaults() {
         let mut e = engine();
         for i in 0..CAPACITY {
