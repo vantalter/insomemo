@@ -338,6 +338,8 @@ static NSArray *layoutList(void) {
 @property NSString *siteHost;
 // Whether the current window was already given time to report its title.
 @property BOOL waitedForTitle;
+// The app of the context last sent to Rust; empty while there is none.
+@property NSString *contextApp;
 - (void)permission:(id)sender;
 - (void)checkUpdates:(id)sender;
 @end
@@ -350,6 +352,14 @@ static CFAbsoluteTime selectedAt;
 static const CFTimeInterval SelectionSettleTime = 0.15;
 /* How long a window may take to report its title; most need under 0.3 s. */
 static const CFTimeInterval TitleWaitTime = 0.3;
+/* macOS's own password and Touch ID dialog, lock screen, and screen saver. They
+ * are not places the user types in their own layout: macOS switches to a Latin
+ * layout for a password and back afterwards, so while one is in front there is
+ * no context, and Insomemo neither switches nor learns. */
+static BOOL systemPrompt(NSString *identifier) {
+    return [@[ @"com.apple.SecurityAgent", @"com.apple.loginwindow",
+               @"com.apple.ScreenSaver.Engine" ] containsObject:identifier];
+}
 
 static NSTextField *wrappingLabel(NSString *text) {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
@@ -973,6 +983,10 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     NSString *identifier = self.activeApp.bundleIdentifier
                                ?: self.activeApp.executableURL.path
                                ?: self.activeApp.localizedName;
+    if (systemPrompt(identifier)) {
+        [self leaveContext:identifier];
+        return;
+    }
     BOOL ghostty = [identifier isEqualToString:@"com.mitchellh.ghostty"];
     BOOL safari = [identifier isEqualToString:@"com.apple.Safari"] ||
                   [identifier isEqualToString:@"com.apple.SafariTechnologyPreview"];
@@ -1030,6 +1044,10 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
     if (self.observedApp && !title.length && !windowID.length && !self.waitedForTitle) {
         self.waitedForTitle = YES;
         debugLog("context %s untitled, waiting", identifier.UTF8String);
+        // Changes made meanwhile in another app's window are not credited to
+        // the app that was in front before.
+        if (![identifier isEqualToString:self.contextApp])
+            [self leaveContext:identifier];
         [self performSelector:@selector(readContext) withObject:nil afterDelay:TitleWaitTime];
         return;
     }
@@ -1044,8 +1062,18 @@ static void axCallback(AXObserverRef observer, AXUIElementRef element, CFStringR
         debugLog("context %s window=%s title=%s site=%s", identifier.UTF8String,
                  windowID.length ? windowID.UTF8String : "-", debugHash(title), debugHash(site));
     }
+    self.contextApp = identifier;
     switcher_context(identifier.UTF8String, title.UTF8String, windowID.UTF8String,
                      site.UTF8String);
+}
+/* Tells Rust there is no context, as while a system prompt is in front. */
+- (void)leaveContext:(NSString *)identifier {
+    if (!self.contextApp.length)
+        return;
+    self.contextApp = @"";
+    loggedContext = nil;
+    debugLog("context none, %s in front", identifier.UTF8String);
+    switcher_context("", "", "", "");
 }
 - (void)layoutChanged:(NSNotification *)notification {
     TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();
