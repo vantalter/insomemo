@@ -33,6 +33,11 @@ notes=$(git -C "$root" log --no-merges --format=%H ${previous:+"$previous..HEAD"
         esac
     done |
     grep -v '^Release [0-9]' |
+    # Conventional Commits types: changes users notice lose their prefix, the
+    # rest (release pull requests, docs, CI, tests, …) are left out.
+    grep -Ev '^(chore|docs|ci|test|build|style|refactor)(\([^)]*\))?!?:' |
+    sed -E 's/^(feat|fix|perf|revert|deps)(\([^)]*\))?!?: *//' |
+    awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }' |
     sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's|.*|<li>&</li>|')
 
 cat <<EOF
